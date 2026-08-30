@@ -1,0 +1,1715 @@
+---
+title: "DrosRepoopulation"
+output: html_document
+---
+
+# get started
+```{r get started}
+library(multcomp)#
+library(dunn.test)#
+library(rcompanion)#
+library(tidyr)#
+library(ggplot2)#
+library(gridExtra)#
+#library(reshape)#
+library(grid)
+library(readxl)
+library(reshape2)
+library(dplyr)
+library(vegan)
+library(cowplot)
+#library(ggtext)
+#library(gridtext)
+#library(ggh4x)
+#library(minpack.lm)
+#library(Hmisc)
+#library(stats4)
+#library(ggpubr)
+#library(ggh4x)
+#library(readr)
+#library(stringr)
+#library(decontam)
+#library(phyloseq)
+#library(rhdf5)
+#library(qiime2R)
+#library(seqinr)
+library(lme4)
+
+source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/ancom_tests.R")
+source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/g_legend.R")
+source(file = '~/Dropbox/sequencing/16sscripts/FrederickHuangLin-ANCOM-c3d6f98/scripts/ancom_v2.0.R') ## NOTE USER must get ANCOM from independent access to run ANCOM scripts
+source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/pcoa_0.0.3.R")
+source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/make_taxon_plot_0.0.5.R")
+#source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/calculate_correlations.R")
+source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/make_permanova_tables.R")
+#source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/96_well_scripts.R")
+#source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/Gale_functions.R")
+#source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/other_taxonomy_files_0.0.1.R")
+source(file = "https://raw.githubusercontent.com/johnchaston/Gale2024/main/make_distance_plot_0.0.3.R")
+source(file = "https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/modified_on_the_go_functions.R")
+
+calculate_rarefied_otu_table <- function(file_path = file_path, num_subsamplings = 1) {
+  object <- list()
+  cat("running step 1")
+  for(i in 1:num_subsamplings) {
+      object[[i]] <- as.matrix(read.table(paste0("core-metrics-results-",file_path,"-",i,"/rarefied_table.txt"), row.names = 1))
+            if(i %% 5 == 0) {cat(paste0(i,"% done..."))}
+
+  }
+  all_rownames <- c()
+    cat("running step 2")
+
+  for(i in 1:num_subsamplings) {
+    all_rownames <- c(all_rownames, rownames(object[[i]]))
+          if(i %% 5 == 0) {cat(paste0(i,"% done..."))}
+
+  }
+  
+  all_rownames <- unique(all_rownames)
+    
+    object2 <- list()
+    cat("running step 3")
+
+  for(i in 1:num_subsamplings) {
+      intermediate_table <- read.table(paste0("core-metrics-results-",file_path,"-",i,"/rarefied_table.txt"), row.names = 1)
+      intermediate_table$all_rownames <- rownames(intermediate_table)
+      object2[[i]] <- unlist(as.matrix(data.frame(all_rownames) %>% 
+        full_join(intermediate_table, by = c("all_rownames")) %>%
+          mutate_all(~replace(., is.na(.), 0)) %>%
+#          tidyr::complete(fill = list(count = 0)) %>%
+        dplyr::select(-all_rownames)))
+      object2[[i]]
+      rownames(object2[[i]]) <- all_rownames
+      colnames(object2[[i]]) <- colnames(read.table(paste0("core-metrics-results-",file_path,"-",i,"/rarefied_table.txt"), row.names = 1, header = T, comment.char = "", skip = 1, fill = T, sep = "\t"))
+      if(i %% 5 == 0) {cat(paste0(i,"% done..."))}
+  }
+
+  object_means <- (Reduce("+", object2)/length(object2))*num_subsamplings
+  
+  if(dim(object_means)[1] >5) {
+    omrows = 5
+  } else {
+    omrows = dim(object_means)[1]
+  }
+  
+  if(sum(object_means[1:omrows,1:omrows]) == 0) {
+    i=6
+    while(sum(object_means[6:i,6:i]) == 0) {
+      i=i+1
+    }
+    print(paste0("Here are rows 6 through ",i," of the first rarefied OTU table:"))
+    print(object2[[1]][6:i,6:i])
+    print(paste0("Here are rows 6 through ",i," of the second rarefied OTU table:"))
+    print(object2[[2]][6:i,6:i])
+    print(paste0("Here are rows 6 through ",i," of the third rarefied OTU table:"))
+    print(object2[[3]][6:i,6:i])
+    print(paste0("Here are rows 6 through ",i," of the averaged rarefied OTU table, values x 100:"))
+    print(object_means[6:i,6:i])
+  } else {
+    print(paste0("Here are rows 1 through 5 of the first rarefied OTU table:"))
+    print(object2[[1]][1:omrows,1:omrows])
+    print(paste0("Here are rows 1 through 5 of the second rarefied OTU table:"))
+    print(object2[[2]][1:omrows,1:omrows])
+    print(paste0("Here are rows 1 through 5 of the third rarefied OTU table:"))
+    print(object2[[3]][1:omrows,1:omrows])
+    print(paste0("Here are rows 1 through 5 of the averaged rarefied OTU table, values x 100:"))
+    print(object_means[1:omrows,1:omrows])
+  }
+  
+  try(dir.create(paste0("core-metrics-results-",file_path,"/")),T)
+  write.table(round(object_means,1), paste0("core-metrics-results-",file_path,"/rarefied_table.txt"), quote = F, sep = "\t", row.names=F)
+  rt3 <- cbind(`#OTU ID` = rownames(object_means), read.table(paste0("core-metrics-results-",file_path,"/rarefied_table.txt"), header = T))
+  write.table("# Constructed from biom file", paste0("core-metrics-results-",file_path,"/rarefied_table.txt"), quote = F, sep = "\t", row.names=F, append=F, col.names = F)
+  write.table(rt3, paste0("core-metrics-results-",file_path,"/rarefied_table.txt"), quote = F, sep = "\t", row.names=F, append=T, col.names = T)
+
+  return(object_means)
+
+}
+calculate_rarefied_distance_matrices <- function(file_path = file_path, metric_assigned = metric_assigned, num_subsamplings = 1) {
+  inputted_metric <- c("bray_curtis_distance_matrix","weighted_unifrac_distance_matrix","unweighted_unifrac_distance_matrix")[metric_assigned]
+  print(inputted_metric)
+  object <- list()
+  for(i in 1:num_subsamplings) {
+    object[[i]] <- as.matrix(read.table(paste0("core-metrics-results-",file_path,"-",i,"/",inputted_metric,"/distance-matrix.tsv")))
+  }
+  object_means <- Reduce("+", object)/length(object)
+ print(paste0("This will print the first few values of the first three distance matrices, followed by the average of all ",num_subsamplings," distance matrices:"))
+
+  print(object[[1]][1:5,1:5])
+  print(object[[2]][1:5,1:5])
+  print(object[[3]][1:5,1:5])
+
+  print(object_means[1:5,1:5])
+  
+  try(dir.create(paste0("core-metrics-results-",file_path,"/")),silent = F)
+  try(dir.create(paste0("core-metrics-results-",file_path,"/",inputted_metric)),T)
+
+  write.table(object_means, paste0("core-metrics-results-",file_path,"/",inputted_metric,"/distance-matrix.tsv"), quote = F, sep = "\t", row.names=T, col.names = NA)
+
+  return(object_means)
+}
+calculate_rarefied_alpha_diversities <- function(file_path = file_path, metric_assigned = metric_assigned, num_subsamplings = 1) {
+  inputted_metric <- c("shannon_vector","evenness_vector","observed_features_vector","faith_pd_vector")[metric_assigned]
+  print(inputted_metric)
+  object <- list()
+  specific_filename = paste0(inputted_metric,"/alpha-diversity.tsv")
+  if (metric_assigned != 4) {
+  for(i in 1:num_subsamplings) {
+    object[[i]] <- as.matrix(read.table(paste0("core-metrics-results-",file_path,"-",i,"/",specific_filename)))
+  }
+  } else if (metric_assigned == 4) {
+    for(i in 1:num_subsamplings) {
+      object[[i]] <- as.matrix(read.table(paste0("core-metrics-results-",file_path,"-",i,"/",specific_filename),row.names = 1))
+    }
+  }
+  
+  object_means <- Reduce("+", object)/length(object)
+ print(paste0("This will print the first few values of the first three alpha diversity calculations, followed by the average of all ",num_subsamplings," alpha diversity calculations:"))
+  print(object[[1]][1:5,])
+  print(object[[2]][1:5,])
+  print(object[[3]][1:5,])
+
+  print(object_means[1:5,])
+
+  try(dir.create(paste0("core-metrics-results-",file_path,"/")),T)
+  try(dir.create(paste0("core-metrics-results-",file_path,"/",inputted_metric)),T)
+
+  if (metric_assigned != 4) {
+    write.table(object_means, paste0("core-metrics-results-",file_path,"/",inputted_metric,"/alpha-diversity.tsv"), quote = F, sep = "\t", row.names=T, col.names = NA)
+  } else if (metric_assigned == 4) {
+        write.table("#SampleID\tfaith_pd", paste0("core-metrics-results-",file_path,"/",inputted_metric,"/alpha-diversity.tsv"), quote = F, sep = "\t", row.names=F, append=F, col.names = F)
+        write.table(object_means, paste0("core-metrics-results-",file_path,"/",inputted_metric,"/alpha-diversity.tsv"), quote = F, sep = "\t", row.names=T, col.names = F, append=T)
+  }
+
+  
+    return(object_means)
+}
+pcoa_manyvar_solidlineplot_romo <- function(folder_name = folder_name, mapper_file = mapper_file, title_name_add = title_name_add, legend_position = legend_position,pco1=1,pco2=2,shape_var = shape_var,color_var = color_var,fill_var = fill_var,circle_var = circle_var, linetype_var = linetype_var, plot_shapes = plot_shapes, plot_fills = plot_fills, plot_colors = plot_colors, plot_ellipses = plot_ellipses, circle_color = "black", legend_name = NULL, legend_label = NULL) {
+  
+  varnames = c(shape_var, color_var, fill_var, circle_var,linetype_var)
+  varnames <- varnames[!duplicated(varnames)]
+  	wfpc <- head(read.table(paste('core-metrics-results-',folder_name,'_pcoa_results/ordination.txt',sep=""), sep="\t", fill=T, skip = 9,blank.lines.skip = T, header=F),-2)
+	pc2 <- head(read.table(paste('core-metrics-results-',folder_name,'_pcoa_results/ordination.txt', sep = ""), sep="\t", fill=T, skip = 3, header=F, colClasses = "character"),2)
+	pc_values <- as.numeric(as.character(pc2[2,]))*100
+
+		wfpc <- wfpc[,c(1,pco1+1, pco2+1)] 
+	
+	fut2 <- read.table(paste('core-metrics-results-',folder_name,'_distance_matrix/distance-matrix.tsv',sep=""), header=T, sep="\t", stringsAsFactors = T) %>% 
+	  dplyr::select(X) %>% 
+	  mutate(X=as.character(X)) %>% 
+	  left_join(read.table(paste0(mapper_file),comment.char = "", header=T, sep="\t") %>% dplyr::select(all_of(varnames),X.SampleID), by=c("X"="X.SampleID"))
+	
+	uwmpc_all <- wfpc %>% 
+	  inner_join(fut2, by=c("V1"="X")) %>%
+	  mutate(shape_var = as.factor(as.character(get(shape_var))),
+	         color_var = as.factor(as.character(get(color_var))),
+	         circle_var = as.factor(as.character(get(circle_var))),
+	         fill_var = as.factor(as.character(get(fill_var))),
+	         linetype_var = as.factor(as.character(get(linetype_var)))
+	  ) %>% droplevels()
+	
+	shape_table <- table(list(uwmpc_all[,shape_var]))
+	fill_table <- table(list(uwmpc_all[,fill_var]))
+	color_table <- table(list(uwmpc_all[,color_var]))
+	circle_table <- table(list(uwmpc_all[,circle_var]))
+	linetype_table <- table(list(uwmpc_all[,linetype_var]))
+	
+	cat("Shapes:",length(shape_table),"values")
+	print(shape_table)
+	cat("Fill:",length(fill_table),"values")
+	print(fill_table)
+	cat("Color:",length(color_table),"values")
+	print(color_table)
+	cat("Ellipse:",length(circle_table),"values")
+	print(circle_table)
+	cat("Linetype:",length(circle_table),"values")
+	print(linetype_table)
+	# 
+	# plot_shapes <- c("square","circle")
+	# plot_fills <- c("green","green")
+	# plot_colors <- c("red","black")
+	# plot_ellipses <- c(1:38)
+	# 
+	# legend_position = "bottom"
+	#str(uwmpc_all)
+	
+	uwmpc_all$axis1 <- round(uwmpc_all[,paste0("V",pco1+1)],10)
+	uwmpc_all$axis2 <- round(uwmpc_all[,paste0("V",pco2+1)],10)
+	
+	if(is.null(legend_name)){
+	  legend_name = c(color_var, fill_var, shape_var, linetype_var)
+	}
+	
+	if(is.null(legend_label)){
+	  legend_label = list(colors = names(color_table)[color_table!=0], fills = names(fill_table)[fill_table!=0], shapes = names(shape_table)[shape_table!=0], linetypes = names(linetype_table)[linetype_table!=0])
+	}
+	
+	ggplot(uwmpc_all, aes(x = axis1, y = axis2, colour=color_var, shape=shape_var, fill=fill_var, lty = linetype_var)) + 
+		geom_point(alpha = .5, size=4, color = "black") + #, shape=plot_shapes, size=3, col=plot_colors) + 
+		scale_color_manual(name=legend_name[1], labels=legend_label[[1]], values=plot_colors) + 
+		scale_fill_manual(name=legend_name[2], labels=legend_label[[2]], values=plot_fills) + 
+		scale_shape_manual(name=legend_name[3],labels=legend_label[[3]], values=plot_shapes) + 
+#	 scale_linetype_manual(name=legend_name[4],labels=legend_label[[4]], values=plot_ellipses) +
+	  #		scale_fill_manual(name="Legend", values=c("red","black","white")) +
+		theme(panel.background = element_blank(), 
+					axis.line = element_line(), 
+					axis.ticks=element_blank(), 
+					axis.title=element_text(size=14),	
+					#           title=element_text(size=16),
+					legend.position=legend_position,
+					plot.title = element_text(size=16, hjust=0),
+					axis.text = element_blank())+
+		labs(x = paste("PCo",pco1," ( ",round(as.numeric(pc_values[pco1]),1),"% )",sep=""), 
+				 y = paste("PCo",pco2," ( ",round(as.numeric(pc_values[pco2]),1),"% )",sep=""), 
+				 title = title_name_add) + 
+		stat_ellipse(aes(x = axis1, y = axis2, group= circle_var, linetype = circle_var, colour = color_var), show.legend = T, type = "t", geom = "polygon", level = 0.95, alpha = 0, inherit.aes=T, lty = 1) 
+	  
+
+}
+
+```
+
+## download files
+```{bash, eval = F}
+
+mkdir drosRepoopulation
+cd drosRepoopulation
+
+wget -O betadispandrare.sh https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/betadispandrare.sh
+wget -O betarare.sh https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/betarare.sh
+wget -O convertAggregateTables.sh https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/convertAggregateTables.sh
+wget -O g2_mapperUpsidedown_JMC.txt https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/g2_mapperUpsidedown_JMC.txt
+wget -O g2_mapperUpsidedown_JMC_filtering.txt https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/g2_mapperUpsidedown_JMC_filtering.txt
+wget -O standard_qiime3_wrarefaction_speedier.sh https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/standard_qiime3_wrarefaction_speedier.sh
+mkdir taxonomy-g2silva
+wget -O taxonomy-g2silva/taxonomy_forR.csv https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/taxonomy-g2silva/taxonomy_forR.csv
+
+for i in "wplus550_decontam_v2" "wminus550_nowWdecontam_v2" "hom550_noWdecontam_v2" "fec550_noWdecontam_v2" "nr550_noWdecontam_v2"
+do
+  mkdir core-metrics-results-$i
+done
+
+for i in "wplus550_decontam_v2" "wminus550_nowWdecontam_v2" "hom550_noWdecontam_v2" "fec550_noWdecontam_v2" "nr550_noWdecontam_v2"
+do
+  mkdir core-metrics-results-$i/unweighted_unifrac_pcoa_results/
+    wget -O core-metrics-results-$i/unweighted_unifrac_pcoa_results/ordination.txt https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/unweighted_unifrac_pcoa_results/ordination.txt
+  mkdir core-metrics-results-$i/weighted_unifrac_pcoa_results/
+    wget -O core-metrics-results-$i/weighted_unifrac_pcoa_results/ordination.txt https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/weighted_unifrac_pcoa_results/ordination.txt
+  mkdir core-metrics-results-$i/bray_curtis_pcoa_results/
+    wget -O core-metrics-results-$i/bray_curtis_pcoa_results/ordination.txt https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/bray_curtis_pcoa_results/ordination.txt
+  mkdir core-metrics-results-$i/weighted_unifrac_distance_matrix/
+    wget -O core-metrics-results-$i/weighted_unifrac_distance_matrix/distance-matrix.tsv https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/weighted_unifrac_distance_matrix/distance-matrix.tsv
+  mkdir core-metrics-results-$i/unweighted_unifrac_distance_matrix/
+    wget -O core-metrics-results-$i/unweighted_unifrac_distance_matrix/distance-matrix.tsv https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/unweighted_unifrac_distance_matrix/distance-matrix.tsv
+  mkdir core-metrics-results-$i/bray_curtis_distance_matrix/
+    wget -O core-metrics-results-$i/bray_curtis_distance_matrix/distance-matrix.tsv https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/bray_curtis_distance_matrix/distance-matrix.tsv
+    wget -O core-metrics-results-$i/rarefied_table.txt https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/rarefied_table.txt
+done
+
+for i in "wplus550_decontam_v2" "wminus550_nowWdecontam_v2"
+do
+  mkdir core-metrics-results-$i/observed_features_vector/
+    wget -O core-metrics-results-$i/observed_features_vector/alpha-diversity.tsv https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/observed_features_vector/alpha-diversity.tsv
+  mkdir core-metrics-results-$i/faith_pd_vector/
+    wget -O core-metrics-results-$i/faith_pd_vector/alpha-diversity.tsv https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/faith_pd_vector/alpha-diversity.tsv
+  mkdir core-metrics-results-$i/shannon_vector/
+    wget -O core-metrics-results-$i/shannon_vector/alpha-diversity.tsv https://raw.githubusercontent.com/johnchaston/DrosRepoopulation/main/core-metrics-results-$i/shannon_vector/alpha-diversity.tsv
+done
+```
+
+
+# Setup
+## initial denoising and file construction
+```{bash, eval = F}
+
+#conda activate qiime2-2022.11
+conda activate qiime2-amplicon-2024.5
+
+name=g2
+mapper=g2_mapperUpsidedown.tsv
+seqsdir=Fastq
+
+<!-- 	## import the sequences -->
+<!-- qiime tools import \ -->
+<!-- 	--type 'SampleData[PairedEndSequencesWithQuality]' \ -->
+<!-- 	--input-path $seqsdir \ -->
+<!-- 	--input-format 'CasavaOneEightSingleLanePerSampleDirFmt' \ -->
+<!-- 	--output-path demux-paired-end-$name.qza -->
+
+<!-- qiime demux summarize \ -->
+<!--   --i-data demux-paired-end-$name.qza \ -->
+<!--   --o-visualization demux-$name.qzv -->
+
+<!-- # this step run on the labchaston server using qiime2-2021.4  -->
+<!-- qiime dada2 denoise-paired \ -->
+<!--   --i-demultiplexed-seqs demux-paired-end-$name"".qza \ -->
+<!--   --p-trim-left-f 15 \ -->
+<!--   --p-trim-left-r 6 \ -->
+<!--   --p-trunc-len-f 202 \ -->
+<!--   --p-trunc-len-r 232 \ -->
+<!--   --o-table table-$name"".qza \ -->
+<!--   --o-representative-sequences rep-seqs-$name"".qza \ -->
+<!--   --o-denoising-stats denoising-stats-$name"".qza \ -->
+<!--   --p-n-threads 7 -->
+
+qiime tools export \
+--input-path denoising-stats-$name.qza \
+--output-path denoising-stats
+
+qiime feature-table summarize \
+--i-table table-$name"".qza \
+--o-visualization table-$name"".qzv \
+--m-sample-metadata-file $mapper
+
+qiime feature-table summarize \
+--i-table table-$name"".qza \
+--o-visualization table-$name"".qzv \
+--m-sample-metadata-file g2_mapperUpsidedown_JMC.txt
+
+
+qiime tools export \
+--input-path table-$name"".qza \
+--output-path table-$name""
+
+biom convert -i table-$name""/feature-table.biom -o rarefied_table-$name"".txt --to-tsv
+
+
+qiime feature-classifier classify-sklearn \
+  --i-classifier ../labchastonsilva-138-99-nb-classifier.qza \
+  --i-reads rep-seqs-$name"".qza \
+  --o-classification taxonomy-$name"".qza
+
+qiime metadata tabulate \
+  --m-input-file taxonomy-$name"".qza \
+  --o-visualization taxonomy-$name"".qzv
+
+qiime tools export \
+--input-path taxonomy-$name"".qza \
+--output-path taxonomy-$name""
+
+# filter out unwanted reads
+qiime taxa filter-table \
+--i-table table-$name"".qza \
+--i-taxonomy taxonomy-$name"".qza \
+--p-exclude Archaea,Chloroplast,Mitochondria,Wolbachia,Rickettsia \
+--o-filtered-table table-$name""_noW.qza
+
+qiime feature-table summarize \
+--i-table table-$name""_noW.qza \
+--o-visualization table-$name""_noW.qzv \
+--m-sample-metadata-file $mapper
+
+## make a tree
+qiime phylogeny align-to-tree-mafft-fasttree \
+  --i-sequences rep-seqs-$name"".qza \
+  --o-alignment aligned-rep-seqs-$name"".qza \
+  --o-masked-alignment masked-aligned-rep-seqs-$name"".qza \
+  --o-tree unrooted-tree-$name"".qza \
+  --o-rooted-tree rooted-tree-$name"".qza
+  
+qiime tools export \
+--input-path rep-seqs-$name"".qza \
+--output-path rep-seqs-$name""
+
+qiime tools export \
+--input-path rooted-tree-$name"".qza \
+--output-path rooted-tree-$name""
+
+
+```
+
+## decontaminate reads
+```{r, eval = F}
+
+## otu table
+otumat = read.table('rarefied_table-g2_noW.txt', comment.char = "", header=T, fill=T, sep = "\t", skip = 1)
+rownames(otumat) <- otumat$X.OTU.ID
+otumat <- otumat %>% dplyr::select(-X.OTU.ID)
+otumat <- as.matrix(otumat)
+otumat
+
+## taxonomy table
+taxmat = read.csv('taxonomy-g2/taxonomy_forR.csv')
+rownames(taxmat) <- taxmat$Feature.ID
+taxmat <- taxmat %>% dplyr::select(-Feature.ID)
+taxmat <- as.matrix(taxmat)
+colnames(taxmat) <- c("Domain","Phylum","Class","Order","Family","Genus","Species")
+taxmat
+
+## mapper
+mapmat = read.table('g2_mapperUpsidedown_JMC_filtering.txt', comment.char = "", header=T, fill=T, sep = "\t")
+rownames(mapmat) <- mapmat$X.SampleID
+mapmat = mapmat %>% dplyr::select(-X.SampleID)
+
+## ref
+refmat = seqinr::read.fasta('rep-seqs-g2/dna-sequences.fasta')
+head(refmat)
+OTU = otu_table(otumat, taxa_are_rows=T)
+TAX = tax_table(taxmat)
+MAP = sample_data(mapmat)
+TREE = ape::read.tree("rooted-tree-g2/tree.nwk")
+
+
+# Construct the master phyloseq object
+final_phyloseq <- phyloseq(OTU, TAX, MAP)
+chaston_phyloseq <- phyloseq(OTU, TAX, MAP)
+
+dim(MAP)
+dim(OTU)
+dim(TAX)
+
+rownames(MAP)
+colnames(OTU)[!colnames(OTU) %in% rownames(MAP)]
+MAP[rownames(MAP)[!rownames(MAP) %in% colnames(OTU)],]
+
+## look at data
+head(sample_data(chaston_phyloseq))
+
+## 5 Inspect Library Sizes
+df <- as.data.frame(sample_data(chaston_phyloseq)) # Put sample_data into a ggplot-friendly data.frame
+df$LibrarySize <- sample_sums(chaston_phyloseq)
+df <- df[order(df$LibrarySize),]
+df$Index <- seq(nrow(df))
+ggplot(data=df, aes(x=Index, y=LibrarySize, color=Sample_or_Control)) + geom_point()
+
+# 6 Identify Contaminants - Frequency
+contamdf.freq.jmc <- isContaminant(chaston_phyloseq, method="frequency", conc="quantReading")
+head(contamdf.freq.jmc)
+table(contamdf.freq.jmc$contaminant)
+head(which(contamdf.freq.jmc$contaminant))
+
+#7 Identify Contaminants - Prevalence
+sample_data(chaston_phyloseq)$is.neg <- sample_data(chaston_phyloseq)$Sample_or_Control == "Extraction_control"
+contamdf.prev <- isContaminant(chaston_phyloseq, method="prevalence", neg="is.neg")
+table(contamdf.prev$contaminant)
+head(which(contamdf.prev$contaminant))
+
+contamdf.prev[c(203,279,368),]
+
+contamdf.prev05 <- isContaminant(chaston_phyloseq, method="prevalence", neg="is.neg", threshold=0.5)
+table(contamdf.prev05$contaminant)
+ps.pa <- transform_sample_counts(chaston_phyloseq, function(abund) 1*(abund>0))
+ps.pa.neg <- prune_samples(sample_data(ps.pa)$Sample_or_Control == "Extraction_control", ps.pa)
+ps.pa.pos <- prune_samples(sample_data(ps.pa)$Sample_or_Control == "Sample", ps.pa)
+df.pa <- data.frame(pa.pos=taxa_sums(ps.pa.pos), pa.neg=taxa_sums(ps.pa.neg),
+                      contaminant=contamdf.prev$contaminant)
+ggplot(data=df.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)")
+
+
+## remove these three
+# e0efc9552294fd6938ad336aec056d2a 9.815746e-05    4     NA 0.06245781 0.06245781        TRUE
+# 338aa56e95cd1240bf2b5bc7b75f0d5a 2.957391e-04   23     NA 0.09155165 0.09155165        TRUE
+# 8bd17108d42b24a674025fff875a38e4 1.830035e-04    6     NA 0.09354346 0.09354346        TRUE
+
+```
+
+## run diversity metrics in 99 iterations 
+```{r, eval = F}
+
+conda activate qiime2-amplicon-2024.5
+
+name=g2
+mapper=g2_mapperUpsidedown_JMC.txt
+
+biom convert -i table-g2_noW/feature-table.biom -o table-g2_noW.txt --to-tsv
+
+abc <- read.table('table-g2_noW.txt', comment.char = "", fill = T, sep = "\t")
+abcA <- abc %>% filter(!V1%in%c("e0efc9552294fd6938ad336aec056d2a","338aa56e95cd1240bf2b5bc7b75f0d5a","8bd17108d42b24a674025fff875a38e4"))
+dim(abc)-dim(abcA)
+length(c("e0efc9552294fd6938ad336aec056d2a","338aa56e95cd1240bf2b5bc7b75f0d5a","8bd17108d42b24a674025fff875a38e4"))
+
+write.table(abcA, "table-g2_noWdecontam_v2.txt", row.names=F, quote = F, sep = "\t", col.names = F)
+
+mkdir table-g2_noWdecontam_v2
+biom convert -i table-g2_noWdecontam_v2.txt -o table-g2_noWdecontam_v2/feature-table.biom --to-hdf5 --table-type="OTU table"
+qiime tools import --input-path table-g2_noWdecontam_v2/feature-table.biom --type 'FeatureTable[Frequency]' --input-format BIOMV210Format --output-path table-g2_noWdecontam_v2.qza
+
+qiime feature-table summarize \
+--i-table table-g2_noWdecontam_v2.qza \
+--o-visualization table-g2_noWdecontam_v2.qzv \
+--m-sample-metadata-file $mapper
+
+bash ./standard_qiime3_wrarefaction_speedier.sh g2_noWdecontam_v2 g2 wplus550_decontam_v2 550 g2_mapperUpsidedown.tsv "wolb='wWolb'" no
+bash ./betarare.sh g2_noWdecontam_v2 g2 wplus550_decontam_v2 550 g2_mapperUpsidedown.tsv "wolb='wWolb'" 100
+
+bash ./standard_qiime3_wrarefaction_speedier.sh g2_noWdecontam_v2 g2 wminus550_nowWdecontam_v2 550 g2_mapperUpsidedown.tsv "(wolb='nWolb' OR grp123='Parent') AND Exp123 NOT IN ('tetracycline treatment')" no 
+bash ./betarare.sh g2_noWdecontam_v2 g2 wminus550_nowWdecontam_v2 550 g2_mapperUpsidedown.tsv "(wolb='nWolb' OR grp123='Parent') AND Exp123 NOT IN ('tetracycline treatment')" 100 
+
+bash ./standard_qiime3_wrarefaction_speedier.sh g2_noWdecontam_v2 g2 hom550_noWdecontam_v2 550 g2_mapperUpsidedown.tsv "Exp123 IN ('Homogenate Microbiome')" no 
+bash ./betarare.sh g2_noWdecontam_v2 g2 hom550_noWdecontam_v2 550 g2_mapperUpsidedown.tsv "Exp123 IN ('Homogenate Microbiome')" 100
+
+bash ./standard_qiime3_wrarefaction_speedier.sh g2_noWdecontam_v2 g2 fec550_noWdecontam_v2 550 g2_mapperUpsidedown.tsv "Exp123 IN ('Feces Transfer')" no 
+bash ./betarare.sh g2_noWdecontam_v2 g2 fec550_noWdecontam_v2 550 g2_mapperUpsidedown.tsv "Exp123 IN ('Feces Transfer')" 100
+
+bash ./standard_qiime3_wrarefaction_speedier.sh g2_noWdecontam_v2 g2 nr550_noWdecontam_v2 550 g2_mapperUpsidedown.tsv "Exp123 IN ('Non-Restoration')" no 
+bash ./betarare.sh g2_noWdecontam_v2 g2 nr550_noWdecontam_v2 550 g2_mapperUpsidedown.tsv "Exp123 IN ('Non-Restoration')" 100 
+
+
+for i in "wplus550_decontam_v2" "wminus550_nowWdecontam_v2" "hom550_noWdecontam_v2" "fec550_noWdecontam_v2" "nr550_noWdecontam_v2"
+do
+  qiime diversity pcoa --i-distance-matrix core-metrics-results-$i""/bray_curtis_distance_matrix.qza --o-pcoa core-metrics-results-$i""/bray_curtis_pcoa_results.qza
+  qiime tools export --input-path core-metrics-results-$i""/bray_curtis_pcoa_results.qza --output-path core-metrics-results-$i""/bray_curtis_pcoa_results
+  qiime diversity pcoa --i-distance-matrix core-metrics-results-$i""/weighted_unifrac_distance_matrix.qza --o-pcoa core-metrics-results-$i""/weighted_unifrac_pcoa_results.qza
+  qiime tools export --input-path core-metrics-results-$i""/weighted_unifrac_pcoa_results.qza --output-path core-metrics-results-$i""/weighted_unifrac_pcoa_results
+  qiime diversity pcoa --i-distance-matrix core-metrics-results-$i""/unweighted_unifrac_distance_matrix.qza --o-pcoa core-metrics-results-$i""/unweighted_unifrac_pcoa_results.qza
+  qiime tools export --input-path core-metrics-results-$i""/unweighted_unifrac_pcoa_results.qza --output-path core-metrics-results-$i""/unweighted_unifrac_pcoa_results
+done
+
+
+```
+
+## average rarefactions
+```{r, eval = F}
+
+for(i in c("wplus550_decontam_v2","hom550_noWdecontam_v2","fec550_noWdecontam_v2","nr550_noWdecontam_v2","wminus550_nowWdecontam_v2")) {
+
+  rarefied_bray_curtis <- calculate_rarefied_distance_matrices(i, metric_assigned= 1, num_subsamplings = 99)
+  rarefied_weightedUnifrac <- calculate_rarefied_distance_matrices(i, metric_assigned= 2, num_subsamplings = 99)
+  rarefied_unweightedUnifrac <- calculate_rarefied_distance_matrices(i, metric_assigned= 3, num_subsamplings = 99)
+  
+  rarefied_shannon <- calculate_rarefied_alpha_diversities(i, metric_assigned= 1, num_subsamplings = 99)
+  #rarefied_evenness <- calculate_rarefied_alpha_diversities(i, metric_assigned= 2, num_subsamplings = 100)
+  rarefied_features <- calculate_rarefied_alpha_diversities(i, metric_assigned= 3, num_subsamplings = 99)
+  rarefied_faith <- calculate_rarefied_alpha_diversities(i, metric_assigned= 4, num_subsamplings = 99)
+  
+  rarefied_table <- calculate_rarefied_otu_table(i, num_subsamplings = 99)
+  
+}
+```
+
+## convert averaged tables and perform PERMDISP
+```{bash, eval = F}
+conda activate qiime2-amplicon-2024.5
+
+for i in "wplus550_decontam_v2" "wminus550_nowWdecontam_v2"
+do
+  j=$(echo $i | grep -Eo '[0-9]+')
+  bash ./convertAggregateTables.sh a aa $i aaa aaaa "aaaaa" aaaaaa aaaaaaa
+  bash ./betadispandrare.sh a aa $i 550 g2_mapperUpsidedown.tsv "sex" aaa aaaa
+  bash ./betadispandrare.sh a aa $i 550 g2_mapperUpsidedown.tsv "Exp123" aaa aaaa
+done
+
+for i in "hom550_noWdecontam_v2" "fec550_noWdecontam_v2" "nr550_noWdecontam_v2"
+do
+  j=$(echo $i | grep -Eo '[0-9]+')
+  bash ./convertAggregateTables.sh a aa $i aaa aaaa "aaaaa" aaaaaa aaaaaaa
+  bash ./betadispandrare.sh a aa $i 550 g2_mapperUpsidedown.tsv "sex" aaa aaaa
+  bash ./betadispandrare.sh a aa $i 550 g2_mapperUpsidedown.tsv "wolb" aaa aaaa
+done
+
+```
+
+## perform PERMANOVA
+```{r, eval = F, warning=F, message=F}
+
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+
+for(k in c("wplus550_decontam_v2" ,"wminus550_nowWdecontam_v2")) {
+  file_path = k
+  
+  flies_unweighted <- read.table(paste('core-metrics-results-',file_path,'/unweighted_unifrac_distance_matrix/distance-matrix.tsv',sep=""), header=T, sep="\t") %>% mutate(X=as.character(X))
+  flies_unweighted_dm <- as.dist(flies_unweighted[,2:dim(flies_unweighted)[2]])
+  flies_unifrac_table <- flies_unweighted %>% dplyr::select(X) %>% left_join(read.table(mapper_file,comment.char = "", header=T, fill=T, sep="\t"), by=c("X"="X.SampleID")) %>% droplevels()
+
+  make_permanova_tables(file_path = file_path, mapper_file = mapper_file, flies_unifrac_table = flies_unifrac_table, pform = "~ Exp123 + sex", byval = "margin", stratavar = "grp123", converttable = c("Treatment","Sex")) # seems the best
+  insert_beta_disp(file_path = file_path, row_in_table = c("Treatment","Sex"), row_from_qzvname = c("Exp123","sex"))
+
+}
+
+for(k in c("hom550_noWdecontam_v2","fec550_noWdecontam_v2","nr550_noWdecontam_v2")) {
+  file_path = k
+  
+  flies_unweighted <- read.table(paste('core-metrics-results-',file_path,'/unweighted_unifrac_distance_matrix/distance-matrix.tsv',sep=""), header=T, sep="\t") %>% mutate(X=as.character(X))
+  flies_unweighted_dm <- as.dist(flies_unweighted[,2:dim(flies_unweighted)[2]])
+  flies_unifrac_table <- flies_unweighted %>% dplyr::select(X) %>% left_join(read.table(mapper_file,comment.char = "", header=T, fill=T, sep="\t"), by=c("X"="X.SampleID")) %>% droplevels()
+  
+  make_permanova_tables(file_path = file_path, mapper_file = mapper_file, flies_unifrac_table = flies_unifrac_table, pform = "~ wolb + sex", byval = "margin", stratavar = "GW", converttable = c("Antibiotics","Sex"))
+insert_beta_disp(file_path = file_path, row_in_table = c("Antibiotics","Sex"), row_from_qzvname = c("wolb","sex"))
+
+}
+
+```
+
+# Figure 2
+## - Taxon Plots
+```{r}
+
+file_path <- "wplus550_decontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+map_path = "-g2silva" # taxonomy folder extension
+plotvarnames = c("Exp123") 
+mapper_file = mapper_file 
+taxonomic_level="ASV" ### modify this
+rpa_in_chart = .00025 ### ### modify this
+read_depth = 55000
+legend_position = "bottom"
+sort_x_axis = "Exp123"
+x_cluster = "X.SampleID" #leave the same
+
+ptp <- prep_taxon_plot(
+  file_path = file_path,
+  map_path = map_path,
+  plotvarnames = plotvarnames,
+  mapper_file = mapper_file,
+  taxonomic_level = taxonomic_level,
+  rpa_in_chart = rpa_in_chart,
+  read_depth = read_depth,
+  legend_position = legend_position,
+  sort_x_axis = sort_x_axis,
+  x_cluster = x_cluster,
+  predefined_taxa = NULL,
+  predefined_shortname = NULL
+)
+
+
+x_cluster <- "Exp123" ## if using 'condensed', this is the column that it condenses by; if using make_taxon_plot - then use 'x_cluster = "X.SampleID"
+plot_color <- c("black","lightgreen","darkgreen","blue","lightblue","yellow","red") # change
+plot_order <- ptp[[3]]$shortname[c(6,5,1,2,4,3)] # change
+facet_formula <- ". ~ Exp123"
+sort_x_axis <- "Exp123"
+legend_position = "bottom"
+xorder = "X.SampleID"
+
+ptpstored <- ptp
+ptp[[1]] <- ptp[[1]] %>% filter(twovar == "control microbiome")
+
+base_plot <- make_taxon_plot_condensed(ptp = ptp, plot_color = plot_color, facet_formula = facet_formula, sort_x_axis = sort_x_axis, x_cluster = x_cluster, plotvarnames = plotvarnames, legend_position = "none", read_depth = read_depth,                                       plot_order = plot_order, xorder =xorder, column_bar_width = 0.9, default_colors = F, default_order = F)
+
+base_plot <- make_taxon_plot(ptp = ptp, plot_color = plot_color, facet_formula = facet_formula, sort_x_axis = sort_x_axis, x_cluster = "X.SampleID", plotvarnames = plotvarnames, legend_position = "none", read_depth = read_depth, plot_order = plot_order)
+
+plot_legend_wplus <- g_legend(base_plot + theme(legend.position = "bottom", legend.text = element_text(size = 12), legend.title = element_blank()) + guides(fill=guide_legend(ncol=4,byrow=TRUE)) + scale_fill_manual(name = "", values = c("black","green","darkgreen","blue","cyan","yellow","red"), labels = c("other", bquote(italic("Pseudoxanthomonas")~"ASV"), bquote(italic("Escherichia-Shigella")~"ASV"), bquote(italic("Lactiplantibacillus")~"ASV1"), bquote(italic("Lactiplantibacillus")~"ASV2"),bquote(italic("Commensalibacter")~"ASV"), bquote(italic("Acetobacter")~"ASV"))))
+
+
+
+mapper_csv <- read.table(mapper_file, fill = T, sep = "\t", comment.char = "", header = T, quote = '"')
+
+##
+# make individual panels
+##
+
+for(i in c("Grp1w+FecesTransfer", "Grp1w+HomogenateMicrobiome", "Grp1w+NonRestoration", "Grp2w+FecesTransfer", "Grp2w+HomogenateMicrobiome", "Grp2w+NonRestoration", "Grp3w+FecesTransfer", "Grp3w+HomogenateMicrobiome", "Grp3w+NonRestoration", "Grp4w+FecesTransfer", "Grp4w+HomogenateMicrobiome", "Grp4w+NonRestoration")) {
+  filterid <- mapper_csv %>% filter(ewg == i) %>% dplyr::pull(X.SampleID)
+  ptp <- ptpstored
+  ptp[[1]] <- ptp[[1]] %>% filter(Sample %in% filterid)
+    select_vec <- c(T,c("e5f1dd06cdd91ba5af30c232dcaf667d","4c56aeed6ccd9cab509a5b0b0ddcb21c","983d1ca8f6a55ba907b1c79906f1d84f", "f9a8f7eb646316ec1a73e776ac3b8a5d", "b7244ea7fb75511464dfe7e54d742044", "3a31a1bc75a12419c28f6b67c9cedcb0") %in% ptp[[1]]$OTU)
+  assign(paste0("plot_",i), make_taxon_plot(ptp = ptp, plot_color = plot_color[select_vec], facet_formula = facet_formula, sort_x_axis = sort_x_axis, x_cluster = "X.SampleID", plotvarnames = plotvarnames, legend_position = "none", read_depth = read_depth, plot_order = plot_order))
+}
+
+##
+# manually make one panel
+##
+
+i="Grp3w+NonRestoration"
+
+  filterid <- mapper_csv %>% filter(ewg == i) %>% dplyr::pull(X.SampleID)
+  ptp <- ptpstored
+  sum(ptp[[1]]$X.SampleID %in% c("GCDF217"))
+  
+  ptp[[1]] <- ptp[[1]] %>% filter(Sample %in% filterid)
+  
+    select_vec <- c(F,c("e5f1dd06cdd91ba5af30c232dcaf667d","4c56aeed6ccd9cab509a5b0b0ddcb21c","983d1ca8f6a55ba907b1c79906f1d84f", "f9a8f7eb646316ec1a73e776ac3b8a5d", "b7244ea7fb75511464dfe7e54d742044", "3a31a1bc75a12419c28f6b67c9cedcb0") %in% ptp[[1]]$OTU)
+  assign(paste0("plot_",i), make_taxon_plot(ptp = ptp, plot_color = plot_color[select_vec], facet_formula = facet_formula, sort_x_axis = sort_x_axis, x_cluster = "X.SampleID", plotvarnames = plotvarnames, legend_position = "none", read_depth = read_depth, plot_order = plot_order))
+
+  `plot_Grp3w+NonRestoration`
+```
+
+## - Distance Plot
+```{r}
+
+file_path <- "wplus550_decontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+var1 = "distExp"
+
+comparisons = c(
+  "controlmicrobiome_controlmicrobiome",
+  "controlmicrobiome_HomogenateMicrobiome",
+  "controlmicrobiome_FecesTransfer",
+  "controlmicrobiome_NonRestoration")
+
+Wplus_Treatments_Distance_Plot <- make_distance_plot_1var2023(file_path = file_path, folder_path = "bray_curtis", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar",
+    comparisons = comparisons,   
+  )
+
+Wplus_Treatments_Distance_Plot_WU <- make_distance_plot_1var2023(file_path = file_path, folder_path = "weighted_unifrac", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar",
+    comparisons = comparisons,   
+  )
+
+Wplus_Treatments_Distance_Plot_UU <- make_distance_plot_1var2023(file_path = file_path, folder_path = "unweighted_unifrac", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar",
+    comparisons = comparisons,   
+  )
+
+Wplus_Treatments_Distance_Plot <- make_distance_plot_1var2023(
+  file_path = file_path,
+  folder_path = "bray_curtis",
+  var1 = var1,
+  mapper_file = mapper_file,
+  comparisons = comparisons,
+  title_name_add = "Bray-Curtis vs Control",
+  the_xid = "X",
+  plot_type = "bar"
+) + scale_x_discrete(labels = function(x) stringr::str_wrap(x, width = 20)) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    axis.title.x = element_text(size = 12)
+  )
+
+Wplus_distance_plot <-Wplus_Treatments_Distance_Plot + coord_cartesian(ylim = c(0,.5))
+
+Wplus_distance_plot
+
+```
+
+## - ANCOM 
+```{r}
+
+file_path <- file_path
+mapper_file <- mapper_file
+map_path <- "-g2silva"  # taxonomy folder extension
+
+# Variables for the model
+var1 <- "Exp123"         # comparing treatments (Homogenate, Feces, etc.)
+var2 <- "sex"            # adjustment
+var3 <- "grp123"         # random effect
+var4 <- "expgrp"
+the_id <- "X.SampleID"
+newcol <- "newcol"
+
+# ANCOM parameters
+main.var <- "Exp123"
+adj.formula <- "sex"
+random.formula <- "~1|grp123"
+multcorr <- "fdr"
+sig <- 0.05
+prev.cut <- 0.9
+Group <- "expgrp"        # plot/group by treatment
+
+# Run ANCOM and get plots
+Wplus_treatments_with_control <- make_ancom2_plots(
+  file_path = file_path,
+  map_path = map_path,
+  mapper_file = mapper_file,
+#  taxonomic_level = "genus",
+  taxonomic_level = "X.OTU.ID",
+  var1 = var1,
+  var2 = var2,
+  var3 = var3,
+  var4 = var4,
+  newcol = newcol,
+  the_id = the_id,
+  main.var = main.var,
+  adj.formula = adj.formula,
+  random.formula = random.formula,
+  multcorr = multcorr,
+  sig = sig,
+  prev.cut = prev.cut,
+  Group = Group,
+  return_plots = TRUE
+)
+
+# Display plot
+Wplus_treatments_with_control[[1]]
+
+Wplus_treatments_with_control[[1]]$labels$title
+# blue
+Wplus_treatments_with_control[[1]] +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+Wplus_AncomLacti <- Wplus_treatments_with_control[[1]] +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y  = element_text(size = 12),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    plot.title   = element_blank()
+  )
+
+Wplus_AncomLacti
+
+
+Wplus_treatments_with_control[[2]]$labels$title
+# cyan
+Wplus_AncomLacti2 <- Wplus_treatments_with_control[[2]] +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y  = element_text(size = 12),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    plot.title   = element_blank()
+  )
+
+Wplus_AncomLacti2
+
+
+Wplus_treatments_with_control[[3]]$labels$title
+#yellow
+Wplus_AncomCommensal <- Wplus_treatments_with_control[[3]] +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y  = element_text(size = 12),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    plot.title   = element_blank()
+  )
+
+Wplus_AncomCommensal
+
+
+```
+
+## - the figure
+```{r}
+i=1.2
+tagyposition = 1.01
+tagxposition = -.15
+titlesize = 6
+#jpeg(h=9*i, w=14*i, "Wplusfigure2_Aug2026.jpg", units = "in", res=300)
+grid.arrange(base_plot + labs(tag = "A") + theme(strip.text = element_blank()) + labs(x = NULL, y = "Fractional abundance")  + theme(plot.tag.position =  c(0,tagyposition-.01), axis.title = element_text(face = "bold", size = 14))+ coord_cartesian(ylim = c(0,1), expand = F), 
+             `plot_Grp1w+HomogenateMicrobiome` + labs(tag="J")+ theme(strip.text = element_blank(), axis.text.x = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp2w+HomogenateMicrobiome` + labs(tag="K")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp3w+HomogenateMicrobiome` + labs(tag="L")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp4w+HomogenateMicrobiome` + labs(tag="M")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.025,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp1w+FecesTransfer` + labs(tag="F")+ theme(strip.text = element_blank(), axis.text.x = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp2w+FecesTransfer` + labs(tag="G")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp3w+FecesTransfer` + labs(tag="H")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp4w+FecesTransfer` + labs(tag="I")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp1w+NonRestoration` + labs(tag="B")+ theme(strip.text = element_blank(), axis.text.x = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp2w+NonRestoration` + labs(tag="C")+ theme(strip.text = element_blank(), axis.text.y = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp3w+NonRestoration` + labs(tag="D")+ theme(strip.text = element_blank(), axis.text.y = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp4w+NonRestoration` + labs(tag="E")+ theme(strip.text = element_blank(), axis.text.y = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+  ggplot() + theme_void() + geom_text(label = "Population 1", aes(x = 1, y = 1), fontface = "bold", size = titlesize),
+  ggplot() + theme_void() + geom_text(label = "Untreated", aes(x = 1.5, y = 1), fontface = "bold", size = titlesize, hjust = 0.3),
+  ggplot() + theme_void() + geom_text(label = "Feces", aes(x = 1, y = 1), fontface = "bold", size = titlesize, angle = 90),
+  ggplot() + theme_void() + geom_text(label = "Homogenate", aes(x = 1, y = 1), fontface = "bold", size = titlesize, angle = 90),
+  ggplot() + theme_void() + geom_text(label = "No Restoration", aes(x = 1, y = 1), fontface = "bold", size = titlesize, angle = 90),
+  ggplot() + theme_void() + geom_text(label = "Pool of 5 flies", aes(x = 1, y = 1), fontface = "bold", size = 5),
+  ggplot() + theme_void() + geom_text(label = "Population 2", aes(x = 1, y = 1), fontface = "bold", size = titlesize),
+  ggplot() + theme_void() + geom_text(label = "Population 3", aes(x = 1, y = 1), fontface = "bold", size = titlesize),
+  ggplot() + theme_void() + geom_text(label = "Population 4", aes(x = 1, y = 1), fontface = "bold", size = titlesize),
+  plot_legend_wplus,
+  Wplus_distance_plot + labs(tag = "N", title = NULL, x = "Treatment Group", y = "Bray-Curtis distance of\nUntreated vs. Treatment Group") + scale_x_discrete(limits = c("controlmicrobiome_controlmicrobiome","controlmicrobiome_NonRestoration","controlmicrobiome_FecesTransfer","controlmicrobiome_HomogenateMicrobiome"), labels = c("Untreated","No Restoration","Feces","Homogenate")) + theme(axis.text.x = element_text(hjust = 0.5, size = 10, angle = 0),  axis.title = element_text(face = "bold", size = 14), axis.title.x = element_text(face = "bold",size = 14), plot.tag = element_text(face = "bold"))+ coord_cartesian(ylim = c(0,0.5), xlim = c(.3,4.7), expand = F),
+  Wplus_AncomLacti + labs(tag = "O", y = "Fractional abundance", x = NULL) + scale_x_discrete(limits = Wplus_AncomLacti$data$Group[c(13,9:12,1:4,5:8)], labels = c("",rep(c(1,2,3,4),3))) + theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+ theme(axis.text = element_text(face = "bold"), plot.tag = element_text(face = "bold")) +geom_col(fill = "blue", col = "black") + coord_cartesian(ylim = c(0,0.18), xlim = c(.3,13.7), expand = F),
+  Wplus_AncomLacti2 + labs(tag = "P", y = "Fractional abundance", x = NULL) + scale_x_discrete(limits = Wplus_AncomLacti2$data$Group[c(13,9:12,1:4,5:8)], labels = c("",rep(c(1,2,3,4),3))) + theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+ theme(axis.text = element_text(face = "bold"), plot.tag = element_text(face = "bold")) +geom_col(fill = "cyan", col = "black") + coord_cartesian(ylim = c(0,0.7), xlim = c(.3,13.7), expand = F),
+  Wplus_AncomCommensal + labs(tag = "Q", y = "Fractional abundance", x = "\n\nTreatment and population") + scale_x_discrete(limits = Wplus_AncomCommensal$data$Group[c(13,9:12,1:4,5:8)], labels = c("",rep(c(1,2,3,4),3))) + theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+ theme(axis.text = element_text(face = "bold"), plot.tag = element_text(face = "bold")) +geom_col(fill = "yellow", col = "black") + coord_cartesian(ylim = c(0,0.5), xlim = c(.3,13.7), expand = F),
+  widths = c(2,.01,.3,1.3,1,1,1,3.5),
+#  heights = c(.2,1,.55,.45,1,.1,.2),
+  heights = c(.2,1,.55,.14,.31,.38, .62,.1,.2),
+  layout_matrix=rbind(
+    c(15,NA,NA,14,20,21,22,24),
+    c(1,NA,18,10,11,12,13,24),
+    c(1,NA,16, 6,7,8,9,25),
+    c(1,NA,16,6,7,8,9,25),
+    c(1,NA,16,6,7,8,9,26),
+    c(1,NA,17,2,3,4,5,26),
+    c(1,NA,17,2,3,4,5,27),
+    c(19,NA,NA,19,19,19,19,27),
+    c(23,23,23,23,23,23,23,27)
+  )
+)
+#dev.off()
+
+
+```
+
+# Figure 3
+## - Taxon plots
+```{r}
+file_path <- "wminus550_nowWdecontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+map_path = "-g2silva" # taxonomy folder extension
+plotvarnames = c("Exp123") 
+mapper_file = mapper_file 
+taxonomic_level="ASV" ### modify this
+rpa_in_chart = .00025 ### ### modify this
+read_depth = 55000
+legend_position = "bottom"
+sort_x_axis = "Exp123"
+x_cluster = "X.SampleID" #leave the same
+
+ptp <- prep_taxon_plot(
+  file_path = file_path,
+  map_path = map_path,
+  plotvarnames = plotvarnames,
+  mapper_file = mapper_file,
+  taxonomic_level = taxonomic_level,
+  rpa_in_chart = rpa_in_chart,
+  read_depth = read_depth,
+  legend_position = legend_position,
+  sort_x_axis = sort_x_axis,
+  x_cluster = x_cluster,
+  predefined_taxa = NULL,
+  predefined_shortname = NULL
+)
+
+
+x_cluster <- "Exp123" ## if using 'condensed', this is the column that it condenses by; if using make_taxon_plot - then use 'x_cluster = "X.SampleID"
+plot_color <- c("black","brown","green","lightgreen","green3","green4","magenta","purple","darkblue","blue","cyan","yellow","red1","red3","red4") # change
+plot_order <- ptp[[3]]$shortname[c(10,14,13,12,11,5,4,3,1,2,9,6,7,8)] # change
+facet_formula <- ". ~ Exp123"
+sort_x_axis <- "Exp123"
+legend_position = "bottom"
+xorder = "X.SampleID"
+
+base_plot_legend <- make_taxon_plot(ptp = ptp, plot_color = plot_color, facet_formula = facet_formula, sort_x_axis = sort_x_axis, x_cluster = "X.SampleID", plotvarnames = plotvarnames, legend_position = "none", read_depth = read_depth, plot_order = plot_order)
+
+plot_legend_wneg <- g_legend(base_plot_legend + theme(legend.position = "bottom", legend.text = element_text(size = 12), legend.title = element_blank()) + guides(fill=guide_legend(ncol=4,byrow=TRUE)) + scale_fill_manual(name = "", values = c("black","brown","green","lightgreen","green3","green4","magenta","purple","darkblue","blue","cyan","yellow","red1","red3","red4"), labels = c("other", bquote(italic("Ralstonia")~"ASV"), bquote(italic("Pseudoxanthomonas")~"ASV"), bquote(italic("Pseudomonas")~"ASV"),bquote("Pasteurellaceae"~"ASV"),bquote(italic("Escherichia-Shigella")~"ASV"), bquote(italic("Staphylococcus")~"ASV"), bquote("Lactobacillales"~"ASV"), bquote(italic("Levilactobacillus")~"ASV"), bquote(italic("Lactiplantibacillus")~"ASV1"), bquote(italic("Lactiplantibacillus")~"ASV2"),bquote(italic("Commensalibacter")~"ASV"), bquote(italic("Acetobacter")~"ASV1"),bquote(italic("Acetobacter")~"ASV2"), bquote(italic("Acetobacter")~"ASV3"))))
+
+plot(plot_legend_wneg)
+
+ptpstored <- ptp
+ptp[[1]] <- ptp[[1]] %>% filter(twovar == "control microbiome")
+sv <- c(T,c("e8595517e6a64d4c05ab7337c270ce15", "e5f1dd06cdd91ba5af30c232dcaf667d", "13037fdfb522473978de8c968c3e4f89", "1ea3a104fdeda3e4bdc1974f4abb0291", "4c56aeed6ccd9cab509a5b0b0ddcb21c", "a97b9cf658a0c3736061e1185726e5fb","45ec9d13549d1fbd5bbed81b82a6e799","9489650ff7365fbfdac60d72947bea37","983d1ca8f6a55ba907b1c79906f1d84f","f9a8f7eb646316ec1a73e776ac3b8a5d","b7244ea7fb75511464dfe7e54d742044","3a31a1bc75a12419c28f6b67c9cedcb0","a47c56b57bbcbc2940d672582f8a7249","d5e253f9fd3d9fff16e51560b9ba1add") %in% ptp[[1]]$OTU)
+
+base_plot_neg <- make_taxon_plot(ptp = ptp, plot_color = plot_color[sv], facet_formula = facet_formula, sort_x_axis = sort_x_axis, x_cluster = "X.SampleID", plotvarnames = plotvarnames, legend_position = "none", read_depth = read_depth, plot_order = plot_order)
+base_plot_neg + theme(legend.position = "left")
+
+for(i in c("Grp1w-FecesTransfer", "Grp1w-HomogenateMicrobiome","Grp1w-NonRestoration","Grp1w-tetracyclinetreatment","Grp2w-FecesTransfer", "Grp2w-HomogenateMicrobiome", "Grp2w-NonRestoration", "Grp2w-tetracyclinetreatment","Grp3w-FecesTransfer", "Grp3w-HomogenateMicrobiome", "Grp3w-NonRestoration", "Grp3w-tetracyclinetreatment", "Grp4w-FecesTransfer", "Grp4w-HomogenateMicrobiome", "Grp4w-NonRestoration", "Grp4w-tetracyclinetreatment")) {
+  filterid <- mapper_csv %>% filter(ewg == i) %>% dplyr::pull(X.SampleID)
+  ptp <- ptpstored
+  ptp[[1]] <- ptp[[1]] %>% filter(Sample %in% filterid)
+    select_vec <- c(T,c("e8595517e6a64d4c05ab7337c270ce15", "e5f1dd06cdd91ba5af30c232dcaf667d", "13037fdfb522473978de8c968c3e4f89", "1ea3a104fdeda3e4bdc1974f4abb0291", "4c56aeed6ccd9cab509a5b0b0ddcb21c", "a97b9cf658a0c3736061e1185726e5fb","45ec9d13549d1fbd5bbed81b82a6e799","9489650ff7365fbfdac60d72947bea37","983d1ca8f6a55ba907b1c79906f1d84f","f9a8f7eb646316ec1a73e776ac3b8a5d","b7244ea7fb75511464dfe7e54d742044","3a31a1bc75a12419c28f6b67c9cedcb0","a47c56b57bbcbc2940d672582f8a7249","d5e253f9fd3d9fff16e51560b9ba1add") %in% ptp[[1]]$OTU)
+  assign(paste0("plot_",i), make_taxon_plot(ptp = ptp, plot_color = plot_color[select_vec], facet_formula = facet_formula, sort_x_axis = sort_x_axis, x_cluster = "X.SampleID", plotvarnames = plotvarnames, legend_position = "none", read_depth = read_depth, plot_order = plot_order))
+}
+
+```
+
+## - Distance Plot
+```{r}
+file_path <- "wminus550_nowWdecontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+var1 = "distExp"
+
+comparisons = c(
+  "controlmicrobiome_controlmicrobiome",
+  "controlmicrobiome_HomogenateMicrobiome",
+  "controlmicrobiome_FecesTransfer",
+  "controlmicrobiome_NonRestoration")
+
+Wminus_Treatments_Distance_Plot <- make_distance_plot_1var2023(file_path = file_path, folder_path = "bray_curtis", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar",
+    comparisons = comparisons,   
+  )
+
+Wminus_distance_plot <-Wplus_Treatments_Distance_Plot + coord_cartesian(ylim = c(0,.55))
+
+Wminus_Treatments_Distance_Plot_WU <- make_distance_plot_1var2023(file_path = file_path, folder_path = "weighted_unifrac", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar",
+    comparisons = comparisons,   
+  )
+
+Wminus_Treatments_Distance_Plot_UU <- make_distance_plot_1var2023(file_path = file_path, folder_path = "unweighted_unifrac", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar",
+    comparisons = comparisons,   
+  )
+
+```
+
+## - ANCOM 
+```{r}
+
+map_path <- "-g2silva"  # taxonomy folder extension
+
+# Variables for the model
+var1 <- "Exp123"         # comparing treatments (Homogenate, Feces, etc.)
+var2 <- "sex"            # adjustment
+var3 <- "grp123"         # random effect
+var4 <- "expgrp"
+the_id <- "X.SampleID"
+newcol <- "newcol"
+
+# ANCOM parameters
+main.var <- "Exp123"
+adj.formula <- "sex"
+random.formula <- "~1|grp123"
+multcorr <- "fdr"
+sig <- 0.05
+prev.cut <- 0.9
+Group <- "expgrp"        # plot/group by treatment
+
+# Run ANCOM and get plots
+Wminus_treatments_with_control <- make_ancom2_plots(
+  file_path = file_path,
+  map_path = map_path,
+  mapper_file = mapper_file,
+#  taxonomic_level = "genus",
+  taxonomic_level = "X.OTU.ID",
+  var1 = var1,
+  var2 = var2,
+  var3 = var3,
+  var4 = var4,
+  newcol = newcol,
+  the_id = the_id,
+  main.var = main.var,
+  adj.formula = adj.formula,
+  random.formula = random.formula,
+  multcorr = multcorr,
+  sig = sig,
+  prev.cut = prev.cut,
+  Group = Group,
+  return_plots = TRUE
+)
+
+# Display plot
+Wminus_treatments_with_control[[1]]
+
+Wminus_treatments_with_control[[1]]$labels$title
+# blue
+Wminus_treatments_with_control[[1]] +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+Wminus_AncomAceto <- Wminus_treatments_with_control[[1]] +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y  = element_text(size = 12),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    plot.title   = element_blank()
+  )
+
+Wminus_AncomAceto
+
+
+Wminus_treatments_with_control[[2]]$labels$title
+# cyan
+Wminus_AncomCommensal <- Wminus_treatments_with_control[[2]] +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y  = element_text(size = 12),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    plot.title   = element_blank()
+  )
+
+
+```
+
+## - the figure
+```{r}
+
+i=1.2
+tagyposition = 1.01
+tagxposition = -.15
+titlesize = 6
+#jpeg(h=9*i, w=14*i, "Wminusfigure3_Aug2026.jpg", units = "in", res=300)
+grid.arrange(base_plot_neg + labs(tag = "A") + theme(strip.text = element_blank()) + labs(x = NULL, y = "Fractional abundance")  + theme(plot.tag.position =  c(0,tagyposition-.01), axis.title = element_text(face = "bold", size = 14))+ coord_cartesian(ylim = c(0,1), expand = F), 
+             `plot_Grp1w-HomogenateMicrobiome` + labs(tag="J")+ theme(strip.text = element_blank(), axis.text.x = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp2w-HomogenateMicrobiome` + labs(tag="K")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp3w-HomogenateMicrobiome` + labs(tag="L")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp4w-HomogenateMicrobiome` + labs(tag="M")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.025,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp1w-FecesTransfer` + labs(tag="F")+ theme(strip.text = element_blank(), axis.text.x = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp2w-FecesTransfer` + labs(tag="G")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp3w-FecesTransfer` + labs(tag="H")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp4w-FecesTransfer` + labs(tag="I")+ theme(strip.text = element_blank(), axis.text = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp1w-NonRestoration` + labs(tag="B")+ theme(strip.text = element_blank(), axis.text.x = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp2w-NonRestoration` + labs(tag="C")+ theme(strip.text = element_blank(), axis.text.y = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp3w-NonRestoration` + labs(tag="D")+ theme(strip.text = element_blank(), axis.text.y = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+             `plot_Grp4w-NonRestoration` + labs(tag="E")+ theme(strip.text = element_blank(), axis.text.y = element_blank()) + labs(x = NULL, y = NULL) + theme(plot.tag.position =  c(tagxposition+0.05,tagyposition))+ coord_cartesian(ylim = c(0,1), expand = F),
+  ggplot() + theme_void() + geom_text(label = "Population 5", aes(x = 1, y = 1), fontface = "bold", size = titlesize),
+  ggplot() + theme_void() + geom_text(label = "Untreated", aes(x = 1.5, y = 1), fontface = "bold", size = titlesize, hjust = 0.3),
+  ggplot() + theme_void() + geom_text(label = "Feces", aes(x = 1, y = 1), fontface = "bold", size = titlesize, angle = 90),
+  ggplot() + theme_void() + geom_text(label = "Homogenate", aes(x = 1, y = 1), fontface = "bold", size = titlesize, angle = 90),
+  ggplot() + theme_void() + geom_text(label = "No Restoration", aes(x = 1, y = 1), fontface = "bold", size = titlesize, angle = 90),
+  ggplot() + theme_void() + geom_text(label = "Pool of 5 flies", aes(x = 1, y = 1), fontface = "bold", size = 5),
+  ggplot() + theme_void() + geom_text(label = "Population 6", aes(x = 1, y = 1), fontface = "bold", size = titlesize),
+  ggplot() + theme_void() + geom_text(label = "Population 7", aes(x = 1, y = 1), fontface = "bold", size = titlesize),
+  ggplot() + theme_void() + geom_text(label = "Population 8", aes(x = 1, y = 1), fontface = "bold", size = titlesize),
+  plot_legend_wneg,
+ Wminus_distance_plot + labs(title = NULL, tag = "N", x = "Treatment Group", y = "Bray-Curtis distance of\nUntreated vs. Treatment Group") + scale_x_discrete(limits = c("controlmicrobiome_controlmicrobiome","controlmicrobiome_NonRestoration","controlmicrobiome_FecesTransfer","controlmicrobiome_HomogenateMicrobiome"), labels = c("Untreated","No Restoration", "Feces", "Homogenate")) + theme(axis.text.x = element_text(hjust = 0.5, size = 10, angle = 0),  axis.title = element_text(face = "bold", size = 14), axis.title.x = element_text(face = "bold",size = 14), plot.tag = element_text(face = "bold"))+ coord_cartesian(ylim = c(0,0.5), xlim = c(.3,4.7), expand = F),
+ Wminus_AncomAceto + labs(tag = "O", y = "Fractional abundance", x = "\n\nTreatment and lineage") + scale_x_discrete(limits = Wminus_AncomAceto$data$Group[c(13,9:12,1:4,5:8)], labels = c("",rep(c(5,6,7,8),3))) + theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+ theme(axis.text = element_text(face = "bold"), plot.tag = element_text(face = "bold")) + geom_col(fill = "red", col = "black") + coord_cartesian(ylim = c(0,0.52), xlim = c(.3,13.7), expand = F),
+ Wminus_AncomCommensal + labs(tag = "P", y = "Fractional abundance", x = "\n\nTreatment and lineage") + scale_x_discrete(limits = Wminus_AncomCommensal$data$Group[c(13,9:12,1:4,5:8)], labels = c("",rep(c(5,6,7,8),3))) + theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+ theme(axis.text = element_text(face = "bold"), plot.tag = element_text(face = "bold")) + geom_col(fill = "yellow", col = "black") + coord_cartesian(ylim = c(0,0.01), xlim = c(.3,13.7), expand = F),
+  widths = c(2,.01,.3,1.3,1,1,1,3.5),
+  heights = c(.2,1,.55,.45,.15,.2,.65,.1,.5),
+  layout_matrix=rbind(
+    c(15,NA,NA,14,20,21,22,24),
+    c(1,NA,18,10,11,12,13,24),
+    c(1,NA,16, 6,7,8,9,25),
+    c(1,NA,16,6,7,8,9,25),
+    c(1,NA,17,2,3,4,5,25),
+    c(1,NA,17,2,3,4,5,25),
+    c(1,NA,17,2,3,4,5,26),
+    c(19,NA,NA,19,19,19,19,26),
+    c(23,23,23,23,23,23,23,26)
+  )
+)
+#dev.off()
+
+
+
+```
+
+# Figure 4
+## - NoRestoration PCoA
+```{r}
+file_path <- "nr550_noWdecontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+plotvarnames = c("wolb") 
+shape_var = "wolb"
+color_var = "wolb"
+fill_var = "wolb"
+circle_var = "wolb"
+linetype_var = "wolb"
+plot_shapes <- c(21, 21, 21, 21)
+plot_fills <- c("magenta","darkgreen","red","green")
+plot_colors <- c("magenta","darkgreen","red","green")
+plot_ellipses <- c("solid","solid","solid","solid")
+i="weighted_unifrac"
+for (i in c("unweighted_unifrac","weighted_unifrac","bray_curtis")) {
+  if (i == "unweighted_unifrac") {title_name_add <- "Unweighted Unifrac"
+  } else if (i == "weighted_unifrac") {title_name_add <- "Weighted Unifrac"
+  } else if (i == "bray_curtis") {title_name_add <- "Bray Curtis"
+  }
+  legend_position = "none"
+  folder_name = paste0(file_path,"/",i)
+  assign(paste0("pcoa_nr_",i), pcoa_manyvar_solidlineplot_romo(folder_name=folder_name, mapper_file = mapper_file, title_name_add=title_name_add, legend_position = legend_position, shape_var = shape_var, color_var = color_var, fill_var = fill_var, circle_var = circle_var, linetype_var = linetype_var, plot_shapes = plot_shapes, plot_fills = plot_fills, plot_colors = plot_colors, plot_ellipses = plot_ellipses, pco1 =1, pco2=2))
+}
+
+pcoa_nr_bray_curtis
+pcoa_nr_unweighted_unifrac
+pcoa_nr_weighted_unifrac
+var1 = "wolb"
+
+nr_Distance_Plot <- make_distance_plot_1var2023(file_path = file_path, folder_path = "bray_curtis", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar", comparisons = c("nWolb_nWolb","nWolb_wWolb","wWolb_wWolb"))
+
+nr_Distance_Plot
+##
+# ANCOM
+## 
+
+map_path <- "-g2silva"  # taxonomy folder extension
+
+# Variables for the model
+var1 <- "wolb"         # comparing treatments (Homogenate, Feces, etc.)
+var2 <- "sex"            # adjustment
+var3 <- "grp123"         # random effect
+var4 <- "expgrp"
+the_id <- "X.SampleID"
+newcol <- "newcol"
+
+# ANCOM parameters
+main.var <- "wolb"
+adj.formula <- "sex"
+random.formula <- "~1|grp123"
+multcorr <- "fdr"
+sig <- 0.05
+prev.cut <- 0.9
+Group <- "wolb"        # plot/group by treatment
+
+# Run ANCOM and get plots
+nr_treatments_with_control <- make_ancom2_plots(file_path = file_path, map_path = map_path, mapper_file = mapper_file, taxonomic_level = "X.OTU.ID",var1 = var1, var2 = var2, var3 = var3, var4 = var4, newcol = newcol, the_id = the_id, main.var = main.var, adj.formula = adj.formula, random.formula = random.formula, multcorr = multcorr, sig = sig, prev.cut = prev.cut, Group = Group, return_plots = TRUE)
+
+# Display plot
+nr_treatments_with_control
+
+nr_treatments_with_control[[1]]$labels$title
+
+nr_AncomAceto <- nr_treatments_with_control[[1]] +
+  theme(axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),    axis.text.y  = element_text(size = 12),    axis.title.x = element_text(size = 14, face = "bold"),    axis.title.y = element_text(size = 14, face = "bold"),    plot.title   = element_blank())
+
+nr_AncomAceto
+
+nr_treatments_with_control[[2]]$labels$title
+
+nr_AncomCommensal <- nr_treatments_with_control[[2]] +
+  theme(axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),    axis.text.y  = element_text(size = 12),    axis.title.x = element_text(size = 14, face = "bold"),    axis.title.y = element_text(size = 14, face = "bold"),    plot.title   = element_blank())
+
+nr_AncomCommensal
+```
+
+## - Feces PCoA
+```{r}
+file_path <- "fec550_noWdecontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+plotvarnames = c("wolb") 
+shape_var = "wolb"
+color_var = "wolb"
+fill_var = "wolb"
+circle_var = "wolb"
+linetype_var = "wolb"
+plot_shapes <- c(21, 21, 21, 21)
+plot_fills <- c("magenta","darkgreen","red","green")
+plot_colors <- c("magenta","darkgreen","red","green")
+plot_ellipses <- c("solid","solid","solid","solid")
+i="weighted_unifrac"
+for (i in c("unweighted_unifrac","weighted_unifrac","bray_curtis")) {
+  if (i == "unweighted_unifrac") {title_name_add <- "Unweighted Unifrac"
+  } else if (i == "weighted_unifrac") {title_name_add <- "Weighted Unifrac"
+  } else if (i == "bray_curtis") {title_name_add <- "Bray Curtis"
+  }
+  legend_position = "none"
+  folder_name = paste0(file_path,"/",i)
+  assign(paste0("pcoa_fec_",i), pcoa_manyvar_solidlineplot_romo(folder_name=folder_name, mapper_file = mapper_file, title_name_add=title_name_add, legend_position = legend_position, shape_var = shape_var, color_var = color_var, fill_var = fill_var, circle_var = circle_var, linetype_var = linetype_var, plot_shapes = plot_shapes, plot_fills = plot_fills, plot_colors = plot_colors, plot_ellipses = plot_ellipses, pco1 =1, pco2=2))
+}
+
+pcoa_fec_bray_curtis
+pcoa_fec_unweighted_unifrac
+pcoa_fec_weighted_unifrac
+
+var1 = "wolb"
+
+fec_Distance_Plot <- make_distance_plot_1var2023(file_path = file_path, folder_path = "bray_curtis", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar", comparisons = c("nWolb_nWolb","nWolb_wWolb","wWolb_wWolb"))
+fec_Distance_Plot
+##
+# ANCOM
+##
+
+map_path <- "-g2silva"  # taxonomy folder extension
+
+# Variables for the model
+var1 <- "wolb"         # comparing treatments (Homogenate, Feces, etc.)
+var2 <- "sex"            # adjustment
+var3 <- "grp123"         # random effect
+var4 <- "expgrp"
+the_id <- "X.SampleID"
+newcol <- "newcol"
+
+# ANCOM parameters
+main.var <- "wolb"
+adj.formula <- "sex"
+random.formula <- "~1|grp123"
+multcorr <- "fdr"
+sig <- 0.05
+prev.cut <- 0.9
+Group <- "wolb"        # plot/group by treatment
+
+# Run ANCOM and get plots
+fec_treatments_with_control <- make_ancom2_plots(file_path = file_path, map_path = map_path, mapper_file = mapper_file, taxonomic_level = "X.OTU.ID",var1 = var1, var2 = var2, var3 = var3, var4 = var4, newcol = newcol, the_id = the_id, main.var = main.var, adj.formula = adj.formula, random.formula = random.formula, multcorr = multcorr, sig = sig, prev.cut = prev.cut, Group = Group, return_plots = TRUE)
+
+# Display plot
+fec_treatments_with_control
+
+fec_treatments_with_control[[1]]$labels$title
+
+fec_AncomCommensal <- fec_treatments_with_control[[1]] +
+  theme(axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),    axis.text.y  = element_text(size = 12),    axis.title.x = element_text(size = 14, face = "bold"),    axis.title.y = element_text(size = 14, face = "bold"),    plot.title   = element_blank())
+
+fec_AncomCommensal
+```
+
+## - Homogenate PCoA
+```{r}
+file_path <- "hom550_noWdecontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+
+plotvarnames = c("wolb") 
+shape_var = "wolb"
+color_var = "wolb"
+fill_var = "wolb"
+circle_var = "wolb"
+linetype_var = "wolb"
+plot_shapes <- c(21, 21, 21, 21)
+plot_fills <- c("magenta","darkgreen","red","green")
+plot_colors <- c("magenta","darkgreen","red","green")
+plot_ellipses <- c("solid","solid","solid","solid")
+i="weighted_unifrac"
+for (i in c("unweighted_unifrac","weighted_unifrac","bray_curtis")) {
+  if (i == "unweighted_unifrac") {title_name_add <- "Unweighted Unifrac"
+  } else if (i == "weighted_unifrac") {title_name_add <- "Weighted Unifrac"
+  } else if (i == "bray_curtis") {title_name_add <- "Bray Curtis"
+  }
+  legend_position = "none"
+  folder_name = paste0(file_path,"/",i)
+  assign(paste0("pcoa_hom_",i), pcoa_manyvar_solidlineplot_romo(folder_name=folder_name, mapper_file = mapper_file, title_name_add=title_name_add, legend_position = legend_position, shape_var = shape_var, color_var = color_var, fill_var = fill_var, circle_var = circle_var, linetype_var = linetype_var, plot_shapes = plot_shapes, plot_fills = plot_fills, plot_colors = plot_colors, plot_ellipses = plot_ellipses, pco1 =1, pco2=2))
+}
+
+pcoa_hom_bray_curtis
+pcoa_hom_unweighted_unifrac
+pcoa_hom_weighted_unifrac
+
+
+##
+# distance plot
+## 
+
+var1 = "wolb"
+
+hom_Distance_Plot <- make_distance_plot_1var2023(file_path = file_path, folder_path = "bray_curtis", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar", comparisons = c("nWolb_nWolb","nWolb_wWolb","wWolb_wWolb"))
+
+##
+# ANCOM
+## 
+
+map_path <- "-g2silva"  # taxonomy folder extension
+
+# Variables for the model
+var1 <- "wolb"         # comparing treatments (Homogenate, Feces, etc.)
+var2 <- "sex"            # adjustment
+var3 <- "grp123"         # random effect
+var4 <- "expgrp"
+the_id <- "X.SampleID"
+newcol <- "newcol"
+
+# ANCOM parameters
+main.var <- "wolb"
+adj.formula <- "sex"
+random.formula <- "~1|grp123"
+multcorr <- "fdr"
+sig <- 0.05
+prev.cut <- 0.9
+Group <- "wolb"        # plot/group by treatment
+
+# Run ANCOM and get plots
+hom_treatments_with_control <- make_ancom2_plots(file_path = file_path, map_path = map_path, mapper_file = mapper_file, taxonomic_level = "X.OTU.ID",var1 = var1, var2 = var2, var3 = var3, var4 = var4, newcol = newcol, the_id = the_id, main.var = main.var, adj.formula = adj.formula, random.formula = random.formula, multcorr = multcorr, sig = sig, prev.cut = prev.cut, Group = Group, return_plots = TRUE)
+
+# Display plot
+hom_treatments_with_control
+
+hom_treatments_with_control[[1]]$labels$title
+
+hom_AncomAceto <- hom_treatments_with_control[[1]] +
+  theme(axis.text.x  = element_text(angle = 45, hjust = 1, size = 12),    axis.text.y  = element_text(size = 12),    axis.title.x = element_text(size = 14, face = "bold"),    axis.title.y = element_text(size = 14, face = "bold"),    plot.title   = element_blank())
+
+hom_AncomAceto
+```
+
+## - the figure
+```{r}
+
+fig3titlesize = 14
+i=1.2
+#jpeg(h=10*i, w=7.5*i, "figure3_aug2026.jpg", units = "in", res=300)
+grid.arrange(pcoa_nr_bray_curtis + labs(tag="A", title = NULL) + theme(legend.position = "none")+ theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = fig3titlesize*.8), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize)),
+             pcoa_fec_bray_curtis + labs(tag="C", title = NULL) + theme(legend.position = "none")+ theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = fig3titlesize*.8), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize)),
+             pcoa_hom_bray_curtis + labs(tag = "E", title = NULL) + theme(legend.position = "none")+ theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = fig3titlesize*.8), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize)), 
+             nr_Distance_Plot + labs(tag="B", title = NULL, x = "Treatment comparisons") + scale_x_discrete(labels = c("W- vs. W-", "W- vs. W+","W+ vs. W+")) + theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = fig3titlesize*.8), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize))+ coord_cartesian(ylim = c(0,.5), xlim = c(.3,3.7), expand = F),
+             fec_Distance_Plot + labs(tag="D", title = NULL,  x = "Treatment comparisons") + scale_x_discrete(labels = c("W- vs. W-", "W- vs. W+","W+ vs. W+")) + theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = fig3titlesize*.8), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize))+ coord_cartesian(ylim = c(0,.5), xlim = c(.3,3.7), expand = F),
+             hom_Distance_Plot + labs(tag="F", title = NULL, x = "Treatment comparisons") + scale_x_discrete(labels = c("W- vs. W-", "W- vs. W+","W+ vs. W+")) + theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = fig3titlesize*.8), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize))+ coord_cartesian(ylim = c(0,.5), xlim = c(.3,3.7), expand = F),
+             nr_AncomAceto + labs(tag = "G", y = "Fractional abundance", x = "Group") + scale_x_discrete(labels = c("W-","W+")) + theme(axis.text.x = element_text(angle = 0, size = fig3titlesize*0.8, hjust = 0.5), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize)) + geom_col(fill = "red", col = "black") + coord_cartesian(ylim = c(0,.32), xlim = c(.3,2.7), expand = F),
+             nr_AncomCommensal + labs(tag = "H", y = "Fractional abundance", x = "Group") + scale_x_discrete(labels = c("W-","W+")) + theme(axis.text.x = element_text(angle = 0, size = fig3titlesize*0.8, hjust = 0.5), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize)) + geom_col(fill = "yellow", col = "black")+ coord_cartesian(ylim = c(0,.055), xlim = c(.3,2.7), expand = F),
+             fec_AncomCommensal + labs(tag = "I", y = "Fractional abundance", x = "Group") + scale_x_discrete(labels = c("W-","W+")) + theme(axis.text.x = element_text(angle = 0, size = fig3titlesize*0.8, hjust = 0.5), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize)) + geom_col(fill = "yellow", col = "black")+ coord_cartesian(ylim = c(0,0.21), xlim = c(.3,2.7), expand = F),
+             hom_AncomAceto + labs(tag = "J", y = "Fractional abundance", x = "Group") + scale_x_discrete(labels = c("W-","W+")) + theme(axis.text.x = element_text(angle = 0, size = fig3titlesize*0.8, hjust = 0.5), axis.title = element_text(face = "bold", size = fig3titlesize), axis.title.x = element_text(face = "bold", size = fig3titlesize)) + geom_col(fill = "red", col = "black")+ coord_cartesian(ylim = c(0,0.32), xlim = c(.3,2.7), expand = F),
+             ggplot() + theme_void(),
+             ggplot() + theme_void(),
+             ggplot() + theme_void(),
+#  widths = c(1,1,.5,.5,1,1),
+  widths = c(1,.25,.75,.5,.5,.75,.25,1),
+  heights = c(0.1,1,0.1,1,0.1,1,1),
+  layout_matrix=rbind(
+    # c(rep(11,6)),
+    # c(1,1,1,4,4,4),
+    # c(rep(12,6)),
+    # c(2,2,2,5,5,5),
+    # c(rep(13,6)),
+    # c(3,3,3,6,6,6),
+    # c(7,8,8,9,9,10)
+    c(rep(11,8)),
+    c(1,1,1,1,4,4,4,4),
+    c(rep(12,8)),
+    c(2,2,2,2,5,5,5,5),
+    c(rep(13,8)),
+    c(3,3,3,3,6,6,6,6),
+    c(7,7,8,8,9,9,10,10)
+  )
+)
+#dev.off()
+```
+
+# Figure S4
+## - PCOA W+ treatments and Control
+```{r}
+file_path <- "wplus550_decontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+var1 = "distExp"
+
+plotvarnames = c("Exp123") 
+shape_var = "Exp123"
+color_var = "Exp123"
+fill_var = "Exp123"
+circle_var = "Exp123"
+linetype_var = "Exp123"
+plot_shapes <- c(21,21,21,21)
+plot_fills <- c("black","blue","red","green")
+plot_colors <- c("black","blue","red","green")
+plot_ellipses <- c("solid","solid","solid","solid")
+for (i in c("unweighted_unifrac","weighted_unifrac","bray_curtis")) {
+  if (i == "unweighted_unifrac") {title_name_add <- "Unweighted Unifrac"
+  } else if (i == "weighted_unifrac") {title_name_add <- "Weighted Unifrac"
+  } else if (i == "bray_curtis") {title_name_add <- "Bray Curtis"
+  }
+  legend_position = "none"
+  folder_name = paste0(file_path,"/",i)
+  assign(paste0("pcoa_wplus",i), pcoa_manyvar_solidlineplot_romo(folder_name=folder_name, mapper_file = mapper_file, title_name_add=title_name_add, legend_position = legend_position, shape_var = shape_var, color_var = color_var, fill_var = fill_var, circle_var = circle_var, linetype_var = linetype_var, plot_shapes = plot_shapes, plot_fills = plot_fills, plot_colors = plot_colors, plot_ellipses = plot_ellipses, pco1 =1, pco2=2))
+}
+
+pcoa_wplusbray_curtis + theme(legend.position = "right")
+pcoa_wplusweighted_unifrac
+pcoa_wplusunweighted_unifrac
+
+```
+
+## - PCOA W- treatments and Control
+```{r}
+file_path <- "wminus550_nowWdecontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+
+plotvarnames = c("Exp123") 
+shape_var = "Exp123"
+color_var = "Exp123"
+fill_var = "Exp123"
+circle_var = "Exp123"
+linetype_var = "Exp123"
+plot_shapes <- c(21, 21, 21, 21)
+plot_fills <- c("black","blue","red","green")
+plot_colors <- c("black","blue","red","green")
+plot_ellipses <- c("solid","solid","solid","solid")
+i="weighted_unifrac"
+for (i in c("unweighted_unifrac","weighted_unifrac","bray_curtis")) {
+  if (i == "unweighted_unifrac") {title_name_add <- "Unweighted Unifrac"
+  } else if (i == "weighted_unifrac") {title_name_add <- "Weighted Unifrac"
+  } else if (i == "bray_curtis") {title_name_add <- "Bray Curtis"
+  }
+  legend_position = "none"
+  folder_name = paste0(file_path,"/",i)
+  assign(paste0("pcoa_wminus",i), pcoa_manyvar_solidlineplot_romo(folder_name=folder_name, mapper_file = mapper_file, title_name_add=title_name_add, legend_position = legend_position, shape_var = shape_var, color_var = color_var, fill_var = fill_var, circle_var = circle_var, linetype_var = linetype_var, plot_shapes = plot_shapes, plot_fills = plot_fills, plot_colors = plot_colors, plot_ellipses = plot_ellipses, pco1 =1, pco2=2))
+}
+
+pcoa_wminusbray_curtis
+pcoa_wminusunweighted_unifrac
+pcoa_wminusweighted_unifrac
+```
+
+## - legend
+```{r}
+
+
+circle_color = "black"
+pco1 = 1
+pco2 = 2
+legend_name = NULL
+legend_label = NULL
+
+  varnames = c(shape_var, color_var, fill_var, circle_var,linetype_var)
+  varnames <- varnames[!duplicated(varnames)]
+  	wfpc <- head(read.table(paste('core-metrics-results-',folder_name,'_pcoa_results/ordination.txt',sep=""), sep="\t", fill=T, skip = 9,blank.lines.skip = T, header=F),-2)
+	pc2 <- head(read.table(paste('core-metrics-results-',folder_name,'_pcoa_results/ordination.txt', sep = ""), sep="\t", fill=T, skip = 3, header=F, colClasses = "character"),2)
+	pc_values <- as.numeric(as.character(pc2[2,]))*100
+
+		wfpc <- wfpc[,c(1,pco1+1, pco2+1)] 
+	
+	fut2 <- read.table(paste('core-metrics-results-',folder_name,'_distance_matrix/distance-matrix.tsv',sep=""), header=T, sep="\t", stringsAsFactors = T) %>% 
+	  dplyr::select(X) %>% 
+	  mutate(X=as.character(X)) %>% 
+	  left_join(read.table(paste0(mapper_file),comment.char = "", header=T, sep="\t") %>% dplyr::select(all_of(varnames),X.SampleID), by=c("X"="X.SampleID"))
+	
+	uwmpc_all <- wfpc %>% 
+	  inner_join(fut2, by=c("V1"="X")) %>%
+	  mutate(shape_var = as.factor(as.character(get(shape_var))),
+	         color_var = as.factor(as.character(get(color_var))),
+	         circle_var = as.factor(as.character(get(circle_var))),
+	         fill_var = as.factor(as.character(get(fill_var))),
+	         linetype_var = as.factor(as.character(get(linetype_var)))
+	  ) %>% droplevels()
+	
+	shape_table <- table(list(uwmpc_all[,shape_var]))
+	fill_table <- table(list(uwmpc_all[,fill_var]))
+	color_table <- table(list(uwmpc_all[,color_var]))
+	circle_table <- table(list(uwmpc_all[,circle_var]))
+	linetype_table <- table(list(uwmpc_all[,linetype_var]))
+	
+	uwmpc_all$axis1 <- round(uwmpc_all[,paste0("V",pco1+1)],10)
+	uwmpc_all$axis2 <- round(uwmpc_all[,paste0("V",pco2+1)],10)
+	
+	if(is.null(legend_name)){
+	  legend_name = c(color_var, fill_var, shape_var, linetype_var)
+	}
+	
+	if(is.null(legend_label)){
+	  legend_label = list(colors = names(color_table)[color_table!=0], fills = names(fill_table)[fill_table!=0], shapes = names(shape_table)[shape_table!=0], linetypes = names(linetype_table)[linetype_table!=0])
+	}
+	
+	
+pcoa_plot_legend <- ggplot(uwmpc_all, aes(x = axis1, y = axis2, color=Exp123, fill = Exp123, shape = Exp123)) + 
+		geom_point(alpha = 1, size=6, color = "black") + #, shape=plot_shapes, size=3, col=plot_colors) + 
+		scale_color_manual(name=NULL, values=c("black","green","blue","red"), labels = c("Untreated","No Restoration","Feces","Homogenate")) + 
+		scale_fill_manual(name=NULL, values=c("black","green","blue","red"), labels = c("Untreated","No Restoration","Feces","Homogenate")) + 
+		scale_shape_manual(name=NULL,values=c(21,21,21,21), labels = c("Untreated","No Restoration","Feces","Homogenate")) +
+  theme_classic() +
+		theme(legend.position="bottom",legend.text = element_text(size = 18)) 
+
+pcoa_legend <- g_legend(pcoa_plot_legend + theme(legend.text = element_text(size = 12), legend.title = element_blank()))
+
+plot(pcoa_legend)
+
+```
+
+## - the figure
+```{r}
+i=2
+#jpeg(w=7*i, h=4*i, "figures2_Aug2026.jpg", units = "in", res=300)
+grid.arrange(pcoa_wplusbray_curtis + labs(tag = "A") + theme(legend.position = "none") + labs(x = "PCo1 (51.6%)", y = "PCo2 (32.0%)", title = NULL),
+    pcoa_wplusweighted_unifrac + labs(tag = "B") + theme(legend.position = "none") + labs(x = "PCo1 (88.1%)", y = "PCo2 (4.6%)", title = NULL),
+    pcoa_wplusunweighted_unifrac + labs(tag = "C") + theme(legend.position = "none") + labs(x = "PCo1 (37.1%)", y = "PCo2 (21.9%)", title = NULL),
+    pcoa_wminusbray_curtis + labs(tag = "D") + theme(legend.position = "none") +  labs(x = "PCo1 (79.7%)", y = "PCo2 (9%)", title = NULL),
+    pcoa_wminusweighted_unifrac + labs(tag = "E") + theme(legend.position = "none") + labs(x = "PCo1 (84.3%)", y = "PCo2 (6.7%)", title = NULL),
+    pcoa_wminusunweighted_unifrac + labs(tag = "F") + theme(legend.position = "none") + labs(x = "PCo1 (26.9%)", y = "PCo2 (13.1%)", title = NULL),
+    pcoa_legend,
+    ggplot() + theme_void() + labs(title = "Bray Curtis") + theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5)),
+    ggplot() + theme_void() + labs(title = "Weighted Unifrac") + theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5)),
+    ggplot() + theme_void() + labs(title = "Unweighted Unifrac") + theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5)),
+  widths = c(1,1,1),
+  heights = c(0.1,1,1,.1),
+  layout_matrix=rbind(
+    c(8,9,10),
+    c(1,2,3),
+    c(4,5,6),
+    c(7,7,7)
+  )
+)
+#dev.off()
+```
+
+# Figure S5 - Unifrac distances
+```{r}
+i=2
+#jpeg(w=5*i, h=4*i, "figures3_aug2026.jpg", units = "in", res=300)
+grid.arrange(Wplus_Treatments_Distance_Plot_WU + labs(tag = "A") + labs(title = NULL, x = "Treatment Group", y = "Weighted Unifrac distance of\nUntreated vs. Treatment Group") + scale_x_discrete(limits = c("controlmicrobiome_controlmicrobiome","controlmicrobiome_NonRestoration","controlmicrobiome_FecesTransfer","controlmicrobiome_HomogenateMicrobiome"), labels = c("Untreated","No Restoration", "Feces", "Homogenate")) + theme(axis.text.x = element_text(hjust = 0.5, size = 10, angle = 0),  axis.title = element_text(face = "bold", size = 14), axis.title.x = element_text(face = "bold",size = 14), plot.tag = element_text(face = "bold"))+ coord_cartesian(ylim = c(0,0.25), xlim = c(.3,4.7), expand = F),
+    Wplus_Treatments_Distance_Plot_UU + labs(tag = "B") + labs(title = NULL, x = "Treatment Group", y = "Unweighted Unifrac distance of\nUntreated vs. Treatment Group") + scale_x_discrete(limits = c("controlmicrobiome_controlmicrobiome","controlmicrobiome_NonRestoration","controlmicrobiome_FecesTransfer","controlmicrobiome_HomogenateMicrobiome"), labels = c("Untreated","No Restoration", "Feces", "Homogenate")) + theme(axis.text.x = element_text(hjust = 0.5, size = 10, angle = 0),  axis.title = element_text(face = "bold", size = 14), axis.title.x = element_text(face = "bold",size = 14), plot.tag = element_text(face = "bold"))+ coord_cartesian(ylim = c(0,0.25), xlim = c(.3,4.7), expand = F),
+    Wminus_Treatments_Distance_Plot_WU + labs(tag = "C") + labs(title = NULL, x = "Treatment Group", y = "Weighted Unifrac distance of\nUntreated vs. Treatment Group") + scale_x_discrete(limits = c("controlmicrobiome_controlmicrobiome","controlmicrobiome_NonRestoration","controlmicrobiome_FecesTransfer","controlmicrobiome_HomogenateMicrobiome"), labels = c("Untreated","No Restoration", "Feces", "Homogenate")) + theme(axis.text.x = element_text(hjust = 0.5, size = 10, angle = 0),  axis.title = element_text(face = "bold", size = 14), axis.title.x = element_text(face = "bold",size = 14), plot.tag = element_text(face = "bold"))+ coord_cartesian(ylim = c(0,0.25), xlim = c(.3,4.7), expand = F),
+    Wminus_Treatments_Distance_Plot_UU + labs(tag = "D") + labs(title = NULL, x = "Treatment Group", y = "Unweighted Unifrac distance of\nUntreated vs. Treatment Group") + scale_x_discrete(limits = c("controlmicrobiome_controlmicrobiome","controlmicrobiome_NonRestoration","controlmicrobiome_FecesTransfer","controlmicrobiome_HomogenateMicrobiome"), labels = c("Untreated","No Restoration", "Feces", "Homogenate")) + theme(axis.text.x = element_text(hjust = 0.5, size = 10, angle = 0),  axis.title = element_text(face = "bold", size = 14), axis.title.x = element_text(face = "bold",size = 14), plot.tag = element_text(face = "bold"))+ coord_cartesian(ylim = c(0,0.25), xlim = c(.3,4.7), expand = F),
+  widths = c(1,1),
+  heights = c(1,1),
+  layout_matrix=rbind(
+    c(1,2),
+    c(3,4)
+  )
+)
+#dev.off()
+
+
+```
+
+# Figure S6 - alpha rarefaction
+```{r}
+ 
+observed <- read.table("core-metrics-results-wplus550_decontam_v2/observed_features_vector/alpha-diversity.tsv", sep = "\t", header = T) %>% 
+  inner_join(mapper_csv, by = c("X" = "X.SampleID")) %>%
+  mutate(Exp123 = factor(Exp123, levels = c("control microbiome","Non-Restoration","Feces Transfer","Homogenate Microbiome"), labels = c("Untreated","No Restoration","Feces","Homogenate")))
+
+observed_model <- lmer(observed_features ~ Exp123 + sex + (1|expgrp), observed)
+anova(observed_model)
+summary(observed_model)
+om1 <- glht(observed_model, mcp(Exp123 = "Tukey"))
+cld(om1)
+
+df_labels <- data.frame(xval = names(table(observed$Exp123)),label = unname(cld(om1)$mcletters[[1]][c(1,4,2,3)]),yval = c(1))
+
+observed_plus_plot <- ggplot(observed, aes(x = Exp123, y = log10(observed_features+1))) + geom_boxplot(width = 0.4) + geom_jitter(width = 0.1, alpha = 0.5, size = 2) + theme_classic() + labs(y = "Observed features (Log10 + 1 transformed", x = "Treatment", title = bquote('F'[.("3 ")*`,`*.(" 120 ")]*`=`*.(" 1.17")*`, p = `*.(" 0.32"))) + theme(plot.title = element_text(hjust = 1)) + geom_text(data = df_labels, aes(x = xval, y = yval, label = label))
+
+observed_plus_plot
+
+observed <- read.table("core-metrics-results-wplus550_decontam_v2/faith_pd_vector/alpha-diversity.tsv", sep = "\t", header = F) %>% 
+  inner_join(mapper_csv, by = c("V1" = "X.SampleID"))%>%
+  mutate(Exp123 = factor(Exp123, levels = c("control microbiome","Non-Restoration","Feces Transfer","Homogenate Microbiome"), labels = c("Untreated","No Restoration","Feces","Homogenate")))
+
+observed_model <- lmer(V2 ~ Exp123 + sex + (1|expgrp), observed)
+anova(observed_model)
+summary(observed_model)
+om1 <- glht(observed_model, mcp(Exp123 = "Tukey"))
+cld(om1)
+
+df_labels <- data.frame(xval = names(table(observed$Exp123)),label = unname(cld(om1)$mcletters[[1]][c(1,4,2,3)]),yval = c(0.95))
+
+faith_plus_plot <- ggplot(observed, aes(x = Exp123, y = V2)) + geom_boxplot(width = 0.4) + geom_jitter(width = 0.1, alpha = 0.5, size = 2) + theme_classic() + labs(y = "Faith's phylogenetic diversity", x = "Treatment", title = bquote('F'[.("3 ")*`,`*.(" 120 ")]*`=`*.(" 0.55")*`, p = `*.(" 0.65"))) + theme(plot.title = element_text(hjust = 1)) + geom_text(data = df_labels, aes(x = xval, y = yval, label = label))
+
+faith_plus_plot
+
+observed <- read.table("core-metrics-results-wplus550_decontam_v2/shannon_vector/alpha-diversity.tsv", sep = "\t", header = F) %>% 
+  inner_join(mapper_csv, by = c("V1" = "X.SampleID")) %>%
+  mutate(V2 = as.numeric(V2))%>%
+  mutate(Exp123 = factor(Exp123, levels = c("control microbiome","Non-Restoration","Feces Transfer","Homogenate Microbiome"), labels = c("Untreated","No Restoration","Feces","Homogenate")))
+
+observed_model <- lmer(V2 ~ Exp123 + sex + (1|expgrp), observed)
+anova(observed_model)
+om1 <- glht(observed_model, mcp(Exp123 = "Tukey"))
+cld(om1)
+
+df_labels <- data.frame(xval = names(table(observed$Exp123)),label = unname(cld(om1)$mcletters[[1]][c(1,4,2,3)]),yval = c(2.2))
+
+shannon_plus_plot <- ggplot(observed, aes(x = Exp123, y = V2)) + geom_boxplot(width = 0.4) + geom_jitter(width = 0.1, alpha = 0.5, size = 2) + theme_classic() + labs(y = "Shannon diversity", x = "Treatment", title = bquote('F'[.("3 ")*`,`*.(" 120 ")]*`=`*.(" 1.19")*`, p = `*.(" 0.37"))) + theme(plot.title = element_text(hjust = 1)) + geom_text(data = df_labels, aes(x = xval, y = yval, label = label))
+
+shannon_plus_plot
+
+
+observed <- read.table("core-metrics-results-wminus550_nowWdecontam_v2/observed_features_vector/alpha-diversity.tsv", sep = "\t", header = T) %>% 
+  inner_join(mapper_csv, by = c("X" = "X.SampleID")) %>%
+  mutate(Exp123 = factor(Exp123, levels = c("control microbiome","Non-Restoration","Feces Transfer","Homogenate Microbiome"), labels = c("Untreated","No Restoration","Feces","Homogenate")))
+
+observed_model <- lmer(observed_features ~ Exp123 + sex + (1|expgrp), observed)
+anova(observed_model)
+om1 <- glht(observed_model, mcp(Exp123 = "Tukey"))
+cld(om1)
+
+df_labels <- data.frame(xval = names(table(observed$Exp123)),label = unname(cld(om1)$mcletters[[1]][c(1,4,2,3)]),yval = c(1.5))
+
+observed_minus_plot <- ggplot(observed, aes(x = Exp123, y = log10(observed_features+1))) + geom_boxplot(width = 0.4) + geom_jitter(width = 0.1, alpha = 0.5, size = 2) + theme_classic() + labs(y = "Observed features (Log10 + 1 transformed", x = "Treatment", title = bquote('F'[.("3 ")*`,`*.(" 116 ")]*`=`*.(" 0.86")*`, p = `*.(" 0.51"))) + theme(plot.title = element_text(hjust = 1)) + geom_text(data = df_labels, aes(x = xval, y = yval, label = label))
+
+observed_minus_plot
+
+observed <- read.table("core-metrics-results-wminus550_nowWdecontam_v2/faith_pd_vector/alpha-diversity.tsv", sep = "\t", header = F) %>% 
+  inner_join(mapper_csv, by = c("V1" = "X.SampleID"))%>%
+  mutate(Exp123 = factor(Exp123, levels = c("control microbiome","Non-Restoration","Feces Transfer","Homogenate Microbiome"), labels = c("Untreated","No Restoration","Feces","Homogenate")))
+
+observed_model <- lmer(V2 ~ Exp123 + sex + (1|expgrp), observed)
+anova(observed_model)
+summary(observed_model)
+om1 <- glht(observed_model, mcp(Exp123 = "Tukey"))
+cld(om1)
+
+df_labels <- data.frame(xval = names(table(observed$Exp123)),label = unname(cld(om1)$mcletters[[1]][c(1,4,2,3)]),yval = c(4.5))
+
+faith_minus_plot <- ggplot(observed, aes(x = Exp123, y = V2)) + geom_boxplot(width = 0.4) + geom_jitter(width = 0.1, alpha = 0.5, size = 2) + theme_classic() + labs(y = "Faith's phylogenetic diversity", x = "Treatment", title = bquote('F'[.("3 ")*`,`*.(" 116 ")]*`=`*.(" 1.28")*`, p = `*.(" 0.36"))) + theme(plot.title = element_text(hjust = 1)) + geom_text(data = df_labels, aes(x = xval, y = yval, label = label))
+
+faith_minus_plot
+
+observed <- read.table("core-metrics-results-wminus550_nowWdecontam_v2/shannon_vector/alpha-diversity.tsv", sep = "\t", header = F) %>% 
+  inner_join(mapper_csv, by = c("V1" = "X.SampleID")) %>%
+  mutate(V2 = as.numeric(V2))%>%
+  mutate(Exp123 = factor(Exp123, levels = c("control microbiome","Non-Restoration","Feces Transfer","Homogenate Microbiome"), labels = c("Untreated","No Restoration","Feces","Homogenate")))
+
+observed_model <- lmer(V2 ~ Exp123 + sex + (1|expgrp), observed)
+anova(observed_model)
+om1 <- glht(observed_model, mcp(Exp123 = "Tukey"))
+cld(om1)
+
+df_labels <- data.frame(xval = names(table(observed$Exp123)),label = unname(cld(om1)$mcletters[[1]]),yval = c(2.35))
+
+shannon_minus_plot <- ggplot(observed, aes(x = Exp123, y = V2)) + geom_boxplot(width = 0.4) + geom_jitter(width = 0.1, alpha = 0.5, size = 2) + theme_classic() + labs(y = "Shannon diversity", x = "Treatment", title = bquote('F'[.("3 ")*`,`*.(" 116 ")]*`=`*.(" 23.3")*`, p = `*.(" <0.0006"))) + theme(plot.title = element_text(hjust = 1)) + geom_text(data = df_labels, aes(x = xval, y = yval, label = label))
+shannon_minus_plot
+
+i=2
+#jpeg(w=7.5*i, h=2*2*i, "figureSalpha2.jpg", units = "in", res=300)
+grid.arrange(observed_plus_plot + labs(tag = "A"),
+             faith_plus_plot + labs(tag = "B"),
+             shannon_plus_plot + labs(tag = "C"),
+             observed_minus_plot + labs(tag = "D"),
+             faith_minus_plot + labs(tag = "E"),
+             shannon_minus_plot + labs(tag = "F"),
+  widths = c(1,1,1),
+  heights = c(1,1),
+  layout_matrix=rbind(
+    c(1,2,3),
+    c(4,5,6)
+  )
+)
+#dev.off()
+
+
+```
+
+# Figure S7 - best homogenate distance
+```{r}
+file_path <- "wminus550_nowWdecontam_v2"
+mapper_file <- "g2_mapperUpsidedown_JMC.txt"
+var1 = "ewgdist"
+
+comparisons = c("Grp1wminusHomogenateMicrobiome_Parentwpluscontrolmicrobiome",
+  "Grp2wminusHomogenateMicrobiome_Parentwpluscontrolmicrobiome",
+  "Grp3wminusHomogenateMicrobiome_Parentwpluscontrolmicrobiome",
+  "Grp4wminusHomogenateMicrobiome_Parentwpluscontrolmicrobiome")
+
+figs4_Treatments_Distance_Plot <- make_distance_plot_1var2023(file_path = file_path, folder_path = "bray_curtis", var1 = var1, mapper_file = mapper_file, the_xid = "X", plot_type = "bar", comparisons = comparisons)
+
+i=1
+#jpeg(h=3*i, w=4*i, "figureS4_aug2026.jpg", units = "in", res=300)
+figs4_Treatments_Distance_Plot + scale_x_discrete(labels = c("5","6","7","8")) + labs(x = "Population", y = "Index distance")
+#dev.off()
+
+```
