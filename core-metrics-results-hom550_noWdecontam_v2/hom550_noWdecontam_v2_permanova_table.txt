@@ -1,0 +1,19 @@
+Permanova tables
+unweighted_unifrac
+Df	SumOfSqs	R2	F	Pr(>F)
+wolb	1	0.03	0.03	1.81	0.8
+sex	1	0.02	0.02	1.41	0.1
+Residual	69	1.18	0.95	NA	NA
+Total	71	1.24	1	NA	NA
+weighted_unifrac
+Df	SumOfSqs	R2	F	Pr(>F)
+wolb	1	0	0.09	7.16	0.01
+sex	1	0	0.04	3.47	0.04
+Residual	69	0.03	0.87	NA	NA
+Total	71	0.04	1	NA	NA
+bray_curtis
+Df	SumOfSqs	R2	F	Pr(>F)
+wolb	1	0.04	0.08	6.39	0.01
+sex	1	0.02	0.05	3.8	0.02
+Residual	69	0.45	0.88	NA	NA
+Total	71	0.51	1	NA	NA
